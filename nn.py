@@ -2,7 +2,7 @@ import numpy as np
 import function as fn
 
 # ニューラルネットワークのモデルクラス
-class NeuralNetworkModel:
+class NN_Model:
     def __init__(self, input_dim, hidden_layer, output_dim,
                 act_fn:fn.ActivationFunction = fn.LeakyReLU(),
                 output_fn:fn.OutputFunction = fn.Softmax(),
@@ -144,7 +144,7 @@ if __name__ == "__main__":
     X = np.array([[0, 0], [0, 1], [1, 0], [1, 1]])
     Y = np.array([[1, 0], [0, 1], [0, 1], [1, 0]]) # XOR っぽいラベル
 
-    model = NeuralNetworkModel(
+    model = NN_Model(
         input_dim=2,
         hidden_layer=[4, 4],
         output_dim=2,

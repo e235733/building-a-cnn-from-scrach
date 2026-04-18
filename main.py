@@ -1,9 +1,7 @@
-# from xor_dataset import XorDataset
-# from sklearn_datasets import MoonsDataset, GaussianQuantilesDataset
 from mnist_dataset import MnistDataset
 from plotter import Plotter
 from data_loader import DataLoader, DataNormalizer
-from neural_network import NeuralNetworkModel
+from nn import NN_Model
 import function as fn
 import numpy as np
 from sklearn.model_selection import train_test_split
@@ -57,7 +55,7 @@ def main():
     input_dim = X_train_norm.shape[1]
     output_dim = Y_train.shape[1] if Y_train.ndim > 1 else int(np.max(Y_train) + 1)
 
-    model = NeuralNetworkModel(
+    model = NN_Model(
         input_dim=input_dim,
         hidden_layer=HIDDEN_LAYER,
         output_dim=output_dim,
