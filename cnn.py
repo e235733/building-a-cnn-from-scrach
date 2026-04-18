@@ -2,7 +2,7 @@ import numpy as np
 import function as fn
 
 # 畳み込みニューラルネットワークのモデルクラス
-class ConvolutionalNeuralNetworkModel:
+class CNN_Model:
     def __init__(self, input_dim, hidden_layer, output_dim,
                 act_fn:fn.ActivationFunction = fn.LeakyReLU(),
                 output_fn:fn.OutputFunction = fn.Softmax(),
