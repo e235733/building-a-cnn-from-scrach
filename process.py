@@ -72,7 +72,7 @@ class Convolution:
         return dx, dW, db
     
 class MaxPooling:
-    def __init__(self, pool_h, pool_w, stride=1, pad=0):
+    def __init__(self, pool_h, pool_w, stride=2, pad=0):
         self.pool_h = pool_h # プーリングの高さ
         self.pool_w = pool_w # プーリングの幅
         self.stride = stride # プーリングのストライド
