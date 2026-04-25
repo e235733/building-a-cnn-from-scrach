@@ -1,5 +1,5 @@
 import numpy as np
-from process import Convolution, MaxPooling
+from common.layers import Convolution, MaxPooling
 import function as fn
 
 # 畳み込みニューラルネットワークのモデルクラス
