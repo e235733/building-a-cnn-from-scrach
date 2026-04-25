@@ -1,14 +1,16 @@
 import numpy as np
+from process import Convolution, MaxPooling
 import function as fn
 
 # 畳み込みニューラルネットワークのモデルクラス
 class CNN_Model:
-    def __init__(self, input_dim, hidden_layer, output_dim,
+    def __init__(self, input_dim, conv_filters, hidden_layer, output_dim,
                 act_fn:fn.ActivationFunction = fn.LeakyReLU(),
                 output_fn:fn.OutputFunction = fn.Softmax(),
                 eta=0.01, l2_lambda=0.005, alpha=0.9):
         
         self.input_dim = input_dim
+        self.conv_filters = conv_filters
         self.hidden_layer = hidden_layer
         self.output_dim = output_dim
         self.depth = len(hidden_layer)
@@ -27,7 +29,6 @@ class CNN_Model:
         self.train_loss_history = [] 
         self.test_loss_history = []
 
-
     def _initialize_parameters(self):
         # 畳み込み層のパラメータの初期化
         self.conv_W = []
@@ -35,21 +36,19 @@ class CNN_Model:
         
         rng = np.random.default_rng()
         
-        # 畳み込み層の構成（例: 2層の畳み込み層）
-        conv_layer_configs = [
-            (3, 16, 3),  # (入力チャネル数, 出力チャネル数, カーネルサイズ)
-            (16, 32, 3)
-        ]
+        # 畳み込み層の構成
+        conv_filters = self.conv_filters # (in_channels, out_channels, kernel_size) のリスト
         
-        for in_channels, out_channels, kernel_size in conv_layer_configs:
-            scale = self.act_fn.init_wegit(in_channels * kernel_size * kernel_size, out_channels * kernel_size * kernel_size)
+        for in_channels, out_channels, kernel_size in conv_filters:
+            scale = self.act_fn.init_wegit(in_channels * (kernel_size**2), out_channels * (kernel_size**2))
             w = rng.standard_normal((out_channels, in_channels, kernel_size, kernel_size)) * scale
             b = np.zeros(out_channels)
             self.conv_W.append(w)
             self.conv_b.append(b)
 
         # 全結合層のパラメータの初期化
-        layers = [32 * 7 * 7] + self.hidden_layer + [self.output_dim]
+        last_filters = conv_filters[-1]
+        layers = [last_filters[1]] + self.hidden_layer + [self.output_dim]
         
         for i in range(len(layers) - 1):
             head = layers[i]
@@ -69,24 +68,22 @@ class CNN_Model:
         self.V_W = [np.zeros_like(w) for w in self.W]
         self.V_b = [np.zeros_like(b) for b in self.b]
 
-    def convolution(self, A, w, b):
+    def convolution(self, A, w, b, stride=1, padding=0):
         # 畳み込み演算の実装（例: 単純な畳み込み）
-        # ここでは簡略化のため、実際の畳み込み演算は省略
-        return A  # ダミーの出力
+        conv = Convolution(w, b, stride, padding)
+        return conv.forward(A)
     
-    def pooling(self, A):
+    def pooling(self, A, pool_h=2, pool_w=2, stride=2, padding=0):
         # プーリング演算の実装（例: 最大プーリング）
-        # ここでは簡略化のため、実際のプーリング演算は省略
-        return A  # ダミーの出力
+        pool = MaxPooling(pool_h, pool_w, stride, padding)
+        return pool.forward(A)
 
     def calc_forward_propagation(self, X: np.ndarray):
-        # 前向き伝播の実装（例: 畳み込み層 → 活性化関数 → プーリング → 全結合層）
         # 畳み込み層の処理
         A = X
         for w, b in zip(self.conv_W, self.conv_b):
             A = self.convolution(A, w, b)
             A = self.act_fn.value(A)
-            A = self.pooling(A)
         
         # 全結合層の処理
         A = A.reshape(A.shape[0], -1)  # フラット化
@@ -96,10 +93,35 @@ class CNN_Model:
         Z = A @ self.W[self.depth] + self.b[self.depth]
         self.P = self.output_fn.value(Z)
 
+    def append_grad(self, i, dz, threshold=5.0):
+        # i 番目の dw, db を dz から計算
+        dw = self.A[i].T @ dz + self.l2_lambda * self.W[i]
+        dw_clipped = np.clip(dw, -threshold, threshold)
+        db = np.sum(dz, axis=0)
+        
+        self.dW.append(dw_clipped)
+        self.db.append(db)
+
     def calc_backward_propagation(self, Y):
-        # 逆向き伝播の実装（例: 全結合層 → プーリング → 畳み込み層）
-        # ここでは簡略化のため、実際の逆伝播演算は省略
-        pass
+        # 全結合層の勾配計算
+        self.dW = []
+        self.db = []
+        dz = self.output_fn.dLoss(self.P, Y)
+        self.append_grad(self.depth, dz)
+        for i in range(self.depth, 0, -1):
+            da_prev = dz @ self.W[i].T
+            dz = da_prev * self.act_fn.diff(self.A[i])
+            self.append_grad(i-1, dz)
+        self.dW.reverse()
+        self.db.reverse()
+
+        # 畳み込み層の勾配計算
+        self.d_conv_W = []
+        self.d_conv_b = []
+        # 畳み込み層の勾配計算は、backward メソッドを呼び出して実装
+
+        
+        
 
     def update_parameters(self):
         # パラメータの更新
