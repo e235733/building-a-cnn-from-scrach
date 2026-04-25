@@ -17,6 +17,14 @@ def sigmoid_drad(x):
     return (1.0 - sigmoid(x)) * sigmoid(x)
 
 
+def tanh(x):
+    return np.tanh(x)
+
+
+def tanh_grad(x):
+    return 1 - np.tanh(x) ** 2
+
+
 def relu(x):
     return np.maximum(0, x)
 
@@ -24,6 +32,16 @@ def relu(x):
 def relu_grad(x):
     grad = np.zeros_like(x)
     grad[x>=0] = 1
+    return grad
+
+
+def leaky_relu(x, alpha):
+    return np.maximum(x, x*alpha)
+
+
+def leaky_relu_grad(x, alpha):
+    grad = np.ones_like(x)
+    grad[x<0] = alpha
     return grad
 
 
