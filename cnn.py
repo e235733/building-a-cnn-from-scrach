@@ -1,126 +1,43 @@
 import numpy as np
-from common.layers import Convolution, MaxPooling
-import function as fn
+from common.layers import *
+from collections import OrderedDict
 
 # 畳み込みニューラルネットワークのモデルクラス
 class CNN_Model:
-    def __init__(self, input_dim, conv_filters, hidden_layer, output_dim,
-                act_fn:fn.ActivationFunction = fn.LeakyReLU(),
-                output_fn:fn.OutputFunction = fn.Softmax(),
-                eta=0.01, l2_lambda=0.005, alpha=0.9):
-        
-        self.input_dim = input_dim
-        self.conv_filters = conv_filters
-        self.hidden_layer = hidden_layer
-        self.output_dim = output_dim
-        self.depth = len(hidden_layer)
+    def __init__(self, input_dim=(1, 28, 28), 
+                 conv_param={'filter_num':30, 'filter_size':5, 'pad':0, 'stride':1}, 
+                 hidden_size=100, output_size=10, weight_init_std=0.01, eta=0.01):
 
-        self.act_fn = act_fn # 隠れ層の活性化関数
-        self.output_fn = output_fn # 出力層の活性化関数
+        filter_num = conv_param['filter_num']
+        filter_size = conv_param['filter_size']
+        filter_pad = conv_param['pad']
+        filter_stride = conv_param['stride']
+        input_size = input_dim[1]
+        conv_output_size = (input_size - filter_size + 2*filter_pad) / filter_stride + 1
+        pool_output_size = int(filter_num * (conv_output_size/2) * (conv_output_size/2))
 
         self.eta = eta # 学習率
-        self.l2_lambda = l2_lambda # L2正則化のペナルティ
-        self.alpha = alpha # 慣性係数
 
-        # パラメータの初期化
-        self._initialize_parameters()
+        self.conv_W = weight_init_std * np.random.randn(filter_num, input_dim[0], filter_size, filter_size)
+        self.conv_b = np.zeros(filter_num)
+        self.affine1_W = weight_init_std * np.random.randn(pool_output_size, hidden_size)
+        self.affine1_b = np.zeros(hidden_size)
+        self.affine2_W = weight_init_std * np.random.randn(hidden_size, output_size)
+        self.affine1_b = np.zeros(output_size)
 
         # グラフ作成用の損失記録
-        self.train_loss_history = [] 
-        self.test_loss_history = []
+        self.loss_history = []
 
-    def _initialize_parameters(self):
-        # 畳み込み層のパラメータの初期化
-        self.conv_W = []
-        self.conv_b = []
-        
-        rng = np.random.default_rng()
-        
-        # 畳み込み層の構成
-        conv_filters = self.conv_filters # (in_channels, out_channels, kernel_size) のリスト
-        
-        for in_channels, out_channels, kernel_size in conv_filters:
-            scale = self.act_fn.init_wegit(in_channels * (kernel_size**2), out_channels * (kernel_size**2))
-            w = rng.standard_normal((out_channels, in_channels, kernel_size, kernel_size)) * scale
-            b = np.zeros(out_channels)
-            self.conv_W.append(w)
-            self.conv_b.append(b)
+        # レイヤの生成
+        self.layers = OrderedDict()
+        self.layers['Conv1'] = Convolution(self.params['W1'], self.params['b1'], conv_param['stride'], conv_param['pad'])
+        self.layers['Relu1'] = Relu()
+        self.layers['Pool1'] = Pooling(pool_h=2, pool_w=2, stride=2)
+        self.layers['Affine1'] = Affine(self.params['W2'], self.params['b2'])
+        self.layers['Relu2'] = Relu()
+        self.layers['Affine2'] = Affine(self.params['W3'], self.params['W3'])
 
-        # 全結合層のパラメータの初期化
-        last_filters = conv_filters[-1]
-        layers = [last_filters[1]] + self.hidden_layer + [self.output_dim]
-        
-        for i in range(len(layers) - 1):
-            head = layers[i]
-            tail = layers[i+1]
-            
-            scale = self.act_fn.init_wegit(head, tail)
-            
-            w = rng.standard_normal((head, tail)) * scale
-            b = np.zeros(tail)
-            
-            self.W.append(w)
-            self.b.append(b)
-
-        # Momentum 用の速度 V をゼロ初期化
-        self.V_conv_W = [np.zeros_like(w) for w in self.conv_W]
-        self.V_conv_b = [np.zeros_like(b) for b in self.conv_b]
-        self.V_W = [np.zeros_like(w) for w in self.W]
-        self.V_b = [np.zeros_like(b) for b in self.b]
-
-    def convolution(self, A, w, b, stride=1, padding=0):
-        # 畳み込み演算の実装（例: 単純な畳み込み）
-        conv = Convolution(w, b, stride, padding)
-        return conv.forward(A)
-    
-    def pooling(self, A, pool_h=2, pool_w=2, stride=2, padding=0):
-        # プーリング演算の実装（例: 最大プーリング）
-        pool = MaxPooling(pool_h, pool_w, stride, padding)
-        return pool.forward(A)
-
-    def calc_forward_propagation(self, X: np.ndarray):
-        # 畳み込み層の処理
-        A = X
-        for w, b in zip(self.conv_W, self.conv_b):
-            A = self.convolution(A, w, b)
-            A = self.act_fn.value(A)
-        
-        # 全結合層の処理
-        A = A.reshape(A.shape[0], -1)  # フラット化
-        for i in range(self.depth):
-            Z = A @ self.W[i] + self.b[i]
-            A = self.act_fn.value(Z)
-        Z = A @ self.W[self.depth] + self.b[self.depth]
-        self.P = self.output_fn.value(Z)
-
-    def append_grad(self, i, dz, threshold=5.0):
-        # i 番目の dw, db を dz から計算
-        dw = self.A[i].T @ dz + self.l2_lambda * self.W[i]
-        dw_clipped = np.clip(dw, -threshold, threshold)
-        db = np.sum(dz, axis=0)
-        
-        self.dW.append(dw_clipped)
-        self.db.append(db)
-
-    def calc_backward_propagation(self, Y):
-        # 全結合層の勾配計算
-        self.dW = []
-        self.db = []
-        dz = self.output_fn.dLoss(self.P, Y)
-        self.append_grad(self.depth, dz)
-        for i in range(self.depth, 0, -1):
-            da_prev = dz @ self.W[i].T
-            dz = da_prev * self.act_fn.diff(self.A[i])
-            self.append_grad(i-1, dz)
-        self.dW.reverse()
-        self.db.reverse()
-
-        # 畳み込み層の勾配計算
-        self.d_conv_W = []
-        self.d_conv_b = []
-        # 畳み込み層の勾配計算は、backward メソッドを呼び出して実装
-
-        
+        self.last_layer = SoftmaxWithLoss()
         
 
     def update_parameters(self):
@@ -131,50 +48,73 @@ class CNN_Model:
             self.W[i] += self.V_W[i]
             self.b[i] += self.V_b[i]
 
-    def predict(self, X):
-        # 予測の実装（例: 前向き伝播を通じてクラス確率を出力）
-        A = X
-        for w, b in zip(self.conv_W, self.conv_b):
-            A = self.act_fn.value(self.convolution(A, w, b))
-            A = self.pooling(A)
-        A = A.reshape(A.shape[0], -1)  # フラット化
-        for i in range(self.depth):
-            Z = A @ self.W[i] + self.b[i]
-            A = self.act_fn.value(Z)
-        Z = A @ self.W[self.depth] + self.b[self.depth]
-        return self.output_fn.value(Z)
+
+    def predict(self, x):
+        """順伝播による予測
+        x: 入力データ
+        """
+        for layer in self.layers.values():
+            x = layer.forward(x)
+        return x
+
+
+    def loss(self, x, t):
+        """損失関数を求める
+        x: 予測データ
+        t: 正解ラベル
+        """
+        y = self.predict(x)
+        loss = self.last_layer.forward(y, t)
+        self.loss_history.append(loss)
+        return loss
+
+
+    def accuracy(self, x, t, batch_size=100):
+        """正解率を求める
+        x: 予測データ
+        t: 正解ラベル
+        batch_size: 正解率計算のバッチサイズ
+        """
+        if t.ndim != 1:
+            t = np.argmax(t, axis=1)
+
+        num_correct = 0
+        for i in range(int(x.shape[0] / batch_size)):
+            tx = x[i*batch_size:(i+1)*batch_size]
+            tt = t[i*batch_size:(i+1)*batch_size]
+            y = self.predict(tx)
+            y = np.argmax(y, axis=1)
+            num_correct += np.sum(y == tt) 
+        return num_correct / x.shape[0]
+
+    def gradient(self, x, t):
+        """勾配を求める
+        x : 入力データ
+        t : 教師ラベル
+
+        Returns
+        -------
+        各層の勾配を持ったディクショナリ変数
+            grads['W1']、grads['W2']、...は各層の重み
+            grads['b1']、grads['b2']、...は各層のバイアス
+        """
+        # forward
+        self.loss(x, t)
+
+        # backward
+        dout = 1
+        dout = self.last_layer.backward(dout)
+
+        layers = list(self.layers.values())
+        layers.reverse()
+        for layer in layers:
+            dout = layer.backward(dout)
+
+        # 設定
+        grads = {}
+        grads['W1'], grads['b1'] = self.layers['Conv1'].dW, self.layers['Conv1'].db
+        grads['W2'], grads['b2'] = self.layers['Affine1'].dW, self.layers['Affine1'].db
+        grads['W3'], grads['b3'] = self.layers['Affine2'].dW, self.layers['Affine2'].db
+
+        return grads
     
-    def shift(self, X, Y):
-        # 勾配を計算
-        self.calc_forward_propagation(X)
-        self.calc_backward_propagation(Y)
-        # パラメータを更新
-        self.update_parameters()
-
-    def loss(self, X, Y):
-        P = self.predict(X)
-        base_loss = self.output_fn.Loss(P, Y)
-        
-        l2_penalty = 0.0
-        for w in self.W:
-            l2_penalty += np.sum(w ** 2) 
-        l2_penalty *= (self.l2_lambda / 2)
-
-        return l2_penalty + base_loss
-
-    def log_train_loss(self, X_train, Y_train):
-        train_loss = self.loss(X_train, Y_train)
-        self.train_loss_history.append(train_loss)
-        return train_loss
-
-    def log_test_loss(self, X_test, Y_test):
-        test_loss = self.loss(X_test, Y_test)
-        self.test_loss_history.append(test_loss)
-        return test_loss
-
-    def evaluate_accuracy(self, X, Y: np.ndarray):
-        # 予測と正解を比較して精度を計算
-        predicted_classes = np.argmax(self.predict(X), axis=1)
-        Y_labels = np.argmax(Y, axis=1) if Y.ndim > 1 else Y
-        accuracy = np.mean(predicted_classes == Y_labels)
-        return accuracy
