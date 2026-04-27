@@ -84,34 +84,59 @@ class Affine:
         return dA.reshape(*self.A_shape) # 入力データの形状に戻す（テンソル対応）
 
 class Convolution:
-    def __init__(self, F:np.ndarray, b, eta = 0.01):
-        self.F = F
-        self.col_F = F.reshape(self.F.shape[0], -1).T
+    def __init__(self, W, b, stride=1, pad=0, eta=0.01):
+        self.W = W
         self.b = b
-        self.momentum = Momentum(self.col_F, b, eta)
-
-        self.dcol_F = None
-        self.db = None
-
-    def forward(self, A):
-        self.A_shape = A.shape
-        _, _, f_h, f_w = self.F.shape
-        self.col_A = im2col(A, f_h, f_w)
-        conv = np.dot(self.col_A, self.col_F) + self.b
-        return conv
-    
-    def update_params(self):
-        shift_F, shift_b = self.momentum.velocities(self.dcol_F, self.db)
-        self.F += shift_F
-        self.b += shift_b
+        self.stride = stride
+        self.pad = pad
         
+        # 中間データ（backward時に使用）
+        self.x = None   
+        self.col = None
+        self.col_W = None
+        
+        # 重み・バイアスパラメータの勾配
+        self.dW = None
+        self.db = None
+        
+        self.momentum = Momentum(W, b, eta)
+
+    def forward(self, x):
+        FN, C, FH, FW = self.W.shape
+        N, C, H, W = x.shape
+        out_h = 1 + int((H + 2*self.pad - FH) / self.stride)
+        out_w = 1 + int((W + 2*self.pad - FW) / self.stride)
+
+        col = im2col(x, FH, FW, self.stride, self.pad)
+        col_W = self.W.reshape(FN, -1).T
+
+        out = np.dot(col, col_W) + self.b
+        out = out.reshape(N, out_h, out_w, FN).transpose(0, 3, 1, 2)
+
+        self.x = x
+        self.col = col
+        self.col_W = col_W
+
+        return out
+
+    def update_params(self):
+        shift_W, shift_b = self.momentum.velocities(self.dW, self.db)
+        self.W += shift_W
+        self.b += shift_b
+
     def backward(self, dout):
-        self.dcol_F = self.col_A.T @ dout
+        FN, C, FH, FW = self.W.shape
+        dout = dout.transpose(0, 2, 3, 1).reshape(-1, FN)
+
         self.db = np.sum(dout, axis=0)
-        dcol_A = dout @ self.col_F.T
-        dA = dcol_A.reshape(*self.A_shape)
+        self.dW = np.dot(self.col.T, dout)
+        self.dW = self.dW.transpose(1, 0).reshape(FN, C, FH, FW)
+
+        dcol = np.dot(dout, self.col_W.T)
+        dx = col2im(dcol, self.x.shape, FH, FW, self.stride, self.pad)
+
         self.update_params()
-        return dA
+        return dx
     
 
 class Pooling:
