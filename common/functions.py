@@ -10,10 +10,11 @@ def step_function(x):
 
 
 def sigmoid(x):
-    return 1 / (1 + np.exp(-x))
+    x_clipped = np.clip(x, -250, 250)
+    return 1 / (1 + np.exp(-x_clipped))
 
 
-def sigmoid_drad(x):
+def sigmoid_grad(x):
     return (1.0 - sigmoid(x)) * sigmoid(x)
 
 
@@ -54,18 +55,18 @@ def sum_squared_error(y, t):
     return 0.5 * np.sum((y-t)**2)
 
 
-def closs_entropy_error(y, t):
-    if y.ndim == 1:
-        t = t.reshape(1, t.size)
+def cross_entropy_error(p, y):
+    if p.ndim == 1:
         y = y.reshape(1, y.size)
+        p = p.reshape(1, p.size)
 
-    if t.size == y.size:
-        t = t.argmax(axis=1)
+    if y.size == p.size:
+        y = y.argmax(axis=1)
 
     batch_size = y.shape[0]
-    return -np.sum(np.log(y[np.arrange(batch_size), t] + 1e-7)) / batch_size
+    return -np.sum(np.log(p[np.arrange(batch_size), y] + 1e-7)) / batch_size
 
 
-def softmax_loss(X, t):
-    y = softmax(X)
-    return closs_entropy_error(y, t)
+def softmax_loss(A, y):
+    p = softmax(A)
+    return cross_entropy_error(p, y)

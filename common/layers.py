@@ -1,10 +1,61 @@
 import numpy as np
-from util import im2col
+from functions import *
+from util import im2col, Momentum
+
+class Sigmoid:
+    def forward(self, A):
+        self.out = sigmoid(A)
+        return self.out
+    
+    def backward(self, dout):
+        return dout * (1.0 - self.out) * self.out
+    
+class Tanh:
+    def forward(self, A):
+        self.out = np.tanh(A)
+        return self.out
+    
+    def backward(self, dout):
+        return dout * (1 - self.out**2)
+    
+class ReLU:
+    def forward(self, A):
+        self.grad = relu_grad
+        return np.maximum(0, x)
+    
+    def backward(self, dout):
+        return dout * self.grad
+
+class LeakyReLU:
+    def forward(self, A):
+        self.grad = leaky_relu_grad(A)
+        return leaky_relu(A)
+    
+    def backward(self, dout):
+        return dout * self.grad
+    
+class SoftmaxWithLoss:
+    def forward(self, x, y):
+        self.y = y
+        self.p = softmax(x)
+        self.loss = cross_entropy_error(self.p, self.y)
+        return self.loss
+    
+    def backward(self, ):
+        batch_size = self.y.shape[0]
+        if self.y.size == self.p.size: # 教師データがone-hot-vectorの場合
+            dloss = (self.p - self.y) / batch_size
+        else:
+            dloss = self.p.copy()
+            dloss[np.arange(batch_size), self.y] -= 1
+            dloss = dloss / batch_size
+        return dloss
 
 class Affine:
     def __init__(self, W, b):
         self.W =W
         self.b = b
+        momentum = Momentum(W,b)
         
         self.col_A = None
         self.A_shape = None
@@ -19,6 +70,10 @@ class Affine:
         out = np.dot(self.col_A, self.W) + self.b
 
         return out
+    
+    def update_params(self, shift_W, shift_b):
+        self.W += shift_W
+        self.b += shift_b
 
     def backward(self, dout):
         dA = np.dot(dout, self.W.T)
@@ -41,6 +96,10 @@ class Convolution:
         self.col_A = im2col(A, f_h, f_w)
         conv = np.dot(self.col_A, self.col_F) + self.b
         return conv
+    
+    def update_params(self, shift_W, shift_b):
+        self.W += shift_W
+        self.b += shift_b
         
     def backward(self, dout):
         self.dcol_F = self.col_A.T @ dout
