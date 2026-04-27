@@ -18,7 +18,7 @@ class Tanh:
     def backward(self, dout):
         return dout * (1 - self.out**2)
     
-class ReLU:
+class Relu:
     def forward(self, A):
         self.grad = relu_grad
         return np.maximum(0, x)
@@ -26,7 +26,7 @@ class ReLU:
     def backward(self, dout):
         return dout * self.grad
 
-class LeakyReLU:
+class LeakyRelu:
     def forward(self, A):
         self.grad = leaky_relu_grad(A)
         return leaky_relu(A)
