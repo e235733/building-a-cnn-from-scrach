@@ -41,7 +41,7 @@ class SoftmaxWithLoss:
         self.loss = cross_entropy_error(self.p, self.y)
         return self.loss
     
-    def backward(self, ):
+    def backward(self, dout=1):
         batch_size = self.y.shape[0]
         if self.y.size == self.p.size: # 教師データがone-hot-vectorの場合
             dloss = (self.p - self.y) / batch_size
@@ -52,10 +52,10 @@ class SoftmaxWithLoss:
         return dloss
 
 class Affine:
-    def __init__(self, W, b):
+    def __init__(self, W, b, eta = 0.01):
         self.W =W
         self.b = b
-        momentum = Momentum(W,b)
+        self.momentum = Momentum(W, b, eta)
         
         self.col_A = None
         self.A_shape = None
@@ -71,7 +71,8 @@ class Affine:
 
         return out
     
-    def update_params(self, shift_W, shift_b):
+    def update_params(self):
+        shift_W, shift_b = self.momentum.velocities(self.dW, self.db)
         self.W += shift_W
         self.b += shift_b
 
@@ -79,13 +80,15 @@ class Affine:
         dA = np.dot(dout, self.W.T)
         self.dW = np.dot(self.col_A.T, dout)
         self.db = np.sum(dout, axis=0)
+        self.update_params()
         return dA.reshape(*self.A_shape) # 入力データの形状に戻す（テンソル対応）
 
 class Convolution:
-    def __init__(self, F:np.ndarray, b):
+    def __init__(self, F:np.ndarray, b, eta = 0.01):
         self.F = F
         self.col_F = F.reshape(self.F.shape[0], -1).T
         self.b = b
+        self.momentum = Momentum(self.col_F, b, eta)
 
         self.dcol_F = None
         self.db = None
@@ -97,8 +100,9 @@ class Convolution:
         conv = np.dot(self.col_A, self.col_F) + self.b
         return conv
     
-    def update_params(self, shift_W, shift_b):
-        self.W += shift_W
+    def update_params(self):
+        shift_F, shift_b = self.momentum.velocities(self.dcol_F, self.db)
+        self.F += shift_F
         self.b += shift_b
         
     def backward(self, dout):
@@ -106,6 +110,7 @@ class Convolution:
         self.db = np.sum(dout, axis=0)
         dcol_A = dout @ self.col_F.T
         dA = dcol_A.reshape(*self.A_shape)
+        self.update_params()
         return dA
 
 
