@@ -1,106 +1,81 @@
-from mnist_dataset import MnistDataset
-from plotter import Plotter
-from data_loader import DataLoader, DataNormalizer
-from nn import NN_Model
-import function as fn
+import sys, os
 import numpy as np
-from sklearn.model_selection import train_test_split
-
-import time
+import matplotlib.pyplot as plt
+from mnist_dataset import MnistDataset
+from cnn import CNN_Model
+from common.trainer import Trainer
+from plotter import Plotter
 
 def main():
-
-    NUM_DATA = 70000
-    NUM_EPOCHS = 100
-    BATCH_SIZE = 512
-
-    # モデル構成
-    HIDDEN_LAYER = [256, 128, 64, 16]
+    # --- ハイパーパラメータの設定 ---
+    # 学習を早く終わらせるため、デフォルトではサンプル数を絞っています
+    # 実力を見たい場合は n_samples=70000 にしてください
+    n_samples = 5000 
+    epochs = 20
+    mini_batch_size = 100
+    optimizer = 'Momentum'
+    optimizer_param = {'lr': 0.01}
+    evaluate_sample_num_per_epoch = 1000
     
-    # 活性化関数
-    ACT_FUNCTION = fn.LeakyReLU()
-    OUTPUT_FUNCTION = fn.Softmax()
-
-    # ハイパーパラメータ
-    ETA = 0.01  # 学習率
-    L2_LAMBDA = 0.005  # L2正則化のペナルティ
-    ALPHA = 0.9  # Momentum の慣性係数
-
-    # チェック時やデバッグ時はTrue
-    IS_DETAIL_MODE = True
-
     # --- データの準備 ---
-    all_data = MnistDataset(NUM_DATA)
-
-    X_train = all_data.X_train
-    Y_train = all_data.Y_train
-    X_test = all_data.X_test
-    Y_test = all_data.Y_test
-
-    # テストデータのサイズ
-    test_data_size = 10000
-
-    # # データをランダムに訓練用とテスト用に分割
-    # X_train, X_test, Y_train, Y_test = train_test_split(
-    #     all_data.X, all_data.Y, test_size=test_data_size, random_state=42
-    # )
-
-    normalizer = DataNormalizer(X_train)
-    X_train_norm = normalizer.normalize(X_train)
-    X_test_norm = normalizer.normalize(X_test)
-
-    train_loader = DataLoader(X_train_norm, Y_train, batch_size=BATCH_SIZE)
-
-    # モデルのインスタンス化
-    input_dim = X_train_norm.shape[1]
-    output_dim = Y_train.shape[1] if Y_train.ndim > 1 else int(np.max(Y_train) + 1)
-
-    model = NN_Model(
-        input_dim=input_dim,
-        hidden_layer=HIDDEN_LAYER,
-        output_dim=output_dim,
-        act_fn=ACT_FUNCTION,
-        output_fn=OUTPUT_FUNCTION,
-        eta=ETA,
-        l2_lambda=L2_LAMBDA,
-        alpha=ALPHA
-    )
+    dataset = MnistDataset(n_samples=n_samples)
     
-    # プロッターの初期化（正規化済みのデータを渡す）
-    plotter = Plotter(0.1, X_train_norm[:500], Y_train[:500], IS_DETAIL_MODE)
+    # CNN用にデータを(N, C, H, W)に整形
+    x_train = dataset.X_train.reshape(-1, 1, 28, 28)
+    x_test = dataset.X_test.reshape(-1, 1, 28, 28)
+    t_train = dataset.Y_train
+    t_test = dataset.Y_test
 
-    print(f"Start training: {len(X_train)} samples, {len(train_loader)} batches per epoch")
+    # --- モデルの構築 ---
+    print("Initializing CNN...")
+    model = CNN_Model(
+        input_dim=(1, 28, 28),
+        conv_param={'filter_num': 30, 'filter_size': 5, 'pad': 0, 'stride': 1},
+        hidden_size=100, 
+        output_size=10, 
+        weight_init_std=0.01
+    )
 
-    start_time = time.time()
+    # --- トレーナーの準備 ---
+    trainer = Trainer(
+        model, x_train, t_train, x_test, t_test,
+        epochs=epochs, 
+        mini_batch_size=mini_batch_size,
+        optimizer=optimizer, 
+        optimizer_param=optimizer_param,
+        evaluate_sample_num_per_epoch=evaluate_sample_num_per_epoch,
+        verbose=True
+    )
 
-    for epoch in range(NUM_EPOCHS):
+    # --- プロッターの準備 ---
+    # X は平坦化された状態で渡す（Plotter内部で次元を判断するため）
+    plotter = Plotter(interval=0.1, X=dataset.X_train[:500], Y=t_train[:500], is_detail_mode=True)
 
-        for X_batch, Y_batch in train_loader:
-            model.shift(X_batch, Y_batch)
+    # --- 学習の実行 ---
+    print("Start Training...")
+    # 学習の各ステップで描画を更新したい場合は、trainer.train() を使わずにループを回します
+    for i in range(trainer.max_iter):
+        trainer.train_step()
         
-        # 損失の記録と表示
-        if epoch % 10 == 0:
-            train_loss = model.log_train_loss(X_train_norm[:test_data_size], Y_train[:test_data_size])
-            test_loss = model.log_test_loss(X_test_norm, Y_test)
-            
-            print(f"Epoch {epoch}, Train Loss: {train_loss:.4f}, Test Loss: {test_loss:.4f}")
-            plotter.show(model)
+        # エポックごとにプロットを更新
+        if trainer.current_iter % trainer.iter_per_epoch == 0:
+            plotter.show(trainer)
 
-    end_time = time.time()
-            
-    plotter.show(model)
-    plotter.show_evaluation(model, X_test_norm, Y_test)
+    print("Training Finished.")
 
-    # 最終的な正解率の計算
-    train_accuracy = model.evaluate_accuracy(X_train_norm, Y_train)
-    print(f"Final Train Accuracy: {train_accuracy * 100:.2f}%")
-
-    test_accuracy = model.evaluate_accuracy(X_test_norm, Y_test)
-    print(f"Final Test Accuracy: {test_accuracy * 100:.2f}%")
-
+    # --- 結果の可視化と評価 ---
+    # 最終的な正解率の表示
+    plotter.show(trainer)
+    
+    # 評価用画面（混同行列など）
+    print("Showing Evaluation...")
+    plotter.show_evaluation(model, x_test[:1000], t_test[:1000])
+    
+    # フィルターの可視化
+    print("Visualizing CNN Filters...")
+    plotter.visualize_filters(model)
+    
     plotter.finish()
 
-    print("time:", end_time - start_time)
-
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()
