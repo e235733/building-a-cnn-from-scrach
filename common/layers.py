@@ -85,7 +85,7 @@ class SoftmaxWithLoss:
 
 
 class Affine:
-    def __init__(self, W, b, eta=0.01):
+    def __init__(self, W, b):
         self.W = W
         self.b = b
         
@@ -95,10 +95,7 @@ class Affine:
         self.dW = None
         self.db = None
 
-        self.momentum = Momentum(W, b, eta)
-
     def forward(self, x):
-        # テンソル対応（MNISTなどの画像データも扱えるように）
         self.original_x_shape = x.shape
         x = x.reshape(x.shape[0], -1)
         self.x = x
@@ -111,17 +108,11 @@ class Affine:
         self.dW = np.dot(self.x.T, dout)
         self.db = np.sum(dout, axis=0)
         
-        self.update_params()
         return dx.reshape(*self.original_x_shape)
-
-    def update_params(self):
-        shift_W, shift_b = self.momentum.velocities(self.dW, self.db)
-        self.W += shift_W
-        self.b += shift_b
 
 
 class Convolution:
-    def __init__(self, W, b, stride=1, pad=0, eta=0.01):
+    def __init__(self, W, b, stride=1, pad=0):
         self.W = W
         self.b = b
         self.stride = stride
@@ -135,8 +126,6 @@ class Convolution:
         # 重み・バイアスパラメータの勾配
         self.dW = None
         self.db = None
-        
-        self.momentum = Momentum(W, b, eta)
 
     def forward(self, x):
         FN, C, FH, FW = self.W.shape
@@ -167,13 +156,7 @@ class Convolution:
         dcol = np.dot(dout, self.col_W.T)
         dx = col2im(dcol, self.x.shape, FH, FW, self.stride, self.pad)
 
-        self.update_params()
         return dx
-
-    def update_params(self):
-        shift_W, shift_b = self.momentum.velocities(self.dW, self.db)
-        self.W += shift_W
-        self.b += shift_b
 
 
 class Pooling:

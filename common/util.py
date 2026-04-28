@@ -32,15 +32,3 @@ def col2im(col, input_shape, filter_h, filter_w, stride=1, pad=0):
             img[:, :, y:y_max:stride, x:x_max:stride] += col[:, :, y, x, :, :]
 
     return img[:, :, pad:H + pad, pad:W + pad]
-
-
-class Momentum:
-    def __init__(self, w, b, eta, momentum = 0.9):
-        self.eta = eta
-        self.momentum = momentum
-        self.v_w = np.zeros_like(w)
-        self.v_b = np.zeros_like(b)
-    
-    def velocities(self, dw, db):
-        self.v_w = self.momentum * self.v_w - self.eta * dw
-        self.v_b = self.momentum * self.v_b - self.eta * db
