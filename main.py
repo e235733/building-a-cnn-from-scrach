@@ -1,6 +1,3 @@
-import sys, os
-import numpy as np
-import matplotlib.pyplot as plt
 from mnist_dataset import MnistDataset
 from cnn import CNN_Model
 from common.trainer import Trainer
@@ -8,9 +5,7 @@ from plotter import Plotter
 
 def main():
     # --- ハイパーパラメータの設定 ---
-    # 学習を早く終わらせるため、デフォルトではサンプル数を絞っています
-    # 実力を見たい場合は n_samples=70000 にしてください
-    n_samples = 5000 
+    n_samples = 70000
     epochs = 20
     mini_batch_size = 100
     optimizer = 'Momentum'
@@ -30,7 +25,7 @@ def main():
     print("Initializing CNN...")
     model = CNN_Model(
         input_dim=(1, 28, 28),
-        conv_param={'filter_num': 30, 'filter_size': 5, 'pad': 0, 'stride': 1},
+        conv_param={'filter_num': 30, 'filter_size': 5, 'pad': 2, 'stride': 1},
         hidden_size=100, 
         output_size=10, 
         weight_init_std=0.01
@@ -48,12 +43,10 @@ def main():
     )
 
     # --- プロッターの準備 ---
-    # X は平坦化された状態で渡す（Plotter内部で次元を判断するため）
     plotter = Plotter(interval=0.1, X=dataset.X_train[:500], Y=t_train[:500], is_detail_mode=True)
 
     # --- 学習の実行 ---
     print("Start Training...")
-    # 学習の各ステップで描画を更新したい場合は、trainer.train() を使わずにループを回します
     for i in range(trainer.max_iter):
         trainer.train_step()
         
@@ -64,14 +57,11 @@ def main():
     print("Training Finished.")
 
     # --- 結果の可視化と評価 ---
-    # 最終的な正解率の表示
     plotter.show(trainer)
     
-    # 評価用画面（混同行列など）
     print("Showing Evaluation...")
     plotter.show_evaluation(model, x_test[:1000], t_test[:1000])
     
-    # フィルターの可視化
     print("Visualizing CNN Filters...")
     plotter.visualize_filters(model)
     
