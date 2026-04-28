@@ -31,11 +31,13 @@ class Tanh:
 class Relu:
     def __init__(self):
         self.mask = None
+        self.out = None
 
     def forward(self, x):
         self.mask = (x <= 0)
         out = x.copy()
         out[self.mask] = 0
+        self.out = out
         return out
 
     def backward(self, dout):
@@ -48,11 +50,13 @@ class LeakyRelu:
     def __init__(self, alpha=0.01):
         self.alpha = alpha
         self.mask = None
+        self.out = None
 
     def forward(self, x):
         self.mask = (x <= 0)
         out = x.copy()
         out[self.mask] *= self.alpha
+        self.out = out
         return out
 
     def backward(self, dout):
@@ -91,6 +95,7 @@ class Affine:
         
         self.x = None
         self.original_x_shape = None
+        self.out = None
         # 重み・バイアスパラメータの勾配
         self.dW = None
         self.db = None
@@ -101,6 +106,7 @@ class Affine:
         self.x = x
 
         out = np.dot(self.x, self.W) + self.b
+        self.out = out
         return out
 
     def backward(self, dout):
@@ -122,6 +128,7 @@ class Convolution:
         self.x = None   
         self.col = None
         self.col_W = None
+        self.out = None
         
         # 重み・バイアスパラメータの勾配
         self.dW = None
@@ -142,6 +149,7 @@ class Convolution:
         self.x = x
         self.col = col
         self.col_W = col_W
+        self.out = out
 
         return out
 
@@ -168,6 +176,7 @@ class Pooling:
 
         self.x = None
         self.arg_max = None
+        self.out = None
 
     def forward(self, x):
         N, C, H, W = x.shape
@@ -183,6 +192,7 @@ class Pooling:
 
         self.x = x
         self.arg_max = arg_max
+        self.out = out
 
         return out
 

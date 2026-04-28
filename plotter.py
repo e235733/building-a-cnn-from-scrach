@@ -1,6 +1,5 @@
 import matplotlib.pyplot as plt
 import numpy as np
-from data_loader import DataNormalizer
 
 class Plotter:
     def __init__(self, interval, X, Y, is_detail_mode=False):
@@ -14,46 +13,141 @@ class Plotter:
         
         if self.is_detail_mode:
             # Detail mode: 2x3 grid.
-            self.fig, self.axs = plt.subplots(2, 3, figsize=(12, 7))
+            self.fig, self.axs = plt.subplots(2, 3, figsize=(15, 9))
             plt.tight_layout()
             plt.subplots_adjust(hspace=0.4, wspace=0.3, top=0.9)
             self.ax_loss = self.axs[0, 0]
             self.ax_data = self.axs[0, 1]
-            # [0, 2] は空けておく
+            self.ax_acc = self.axs[0, 2]
             
-            if self.input_dim not in [1, 2]:
+            if self.input_dim != 2:
                 self.ax_data.set_axis_off()
-                self.ax_data.set_title(f"No plot ({self.input_dim}D)")
+                self.ax_data.set_title(f"No 2D Plot ({self.input_dim}D)")
         else:
-            # Default mode: 1x2 if 1D or 2D, 1x1 if not
-            if self.input_dim in [1, 2]:
+            # Default mode
+            if self.input_dim == 2:
                 self.fig = plt.figure(figsize=(12, 6))
                 self.ax_loss = self.fig.add_subplot(1, 2, 1)
                 self.ax_data = self.fig.add_subplot(1, 2, 2)
+                self.ax_acc = None
             else:
-                self.fig = plt.figure(figsize=(6, 6))
-                self.ax_loss = self.fig.add_subplot(1, 1, 1)
+                self.fig = plt.figure(figsize=(12, 6))
+                self.ax_loss = self.fig.add_subplot(1, 2, 1)
+                self.ax_acc = self.fig.add_subplot(1, 2, 2)
                 self.ax_data = None
 
     def show(self, trainer):
+        # trainerかmodelかを自動判別
+        model = getattr(trainer, 'model', trainer)
+        
         self._show_loss(trainer)
         self._show_accuracy(trainer)
         
-        # モデルの予測境界を表示（1D/2Dデータの場合）
+        # モデルの予測境界を表示（2Dデータの場合のみ）
         if self.input_dim == 2 and self.ax_data is not None:
             self.ax_data.cla()
-            self._plot_2d(trainer.model, self.ax_data)
-        elif self.input_dim == 1 and self.ax_data is not None:
-            self.ax_data.cla()
-            self._plot_1d(trainer.model, self.ax_data)
+            self._plot_2d(model, self.ax_data)
         
         # 詳細統計情報の描画
         if self.is_detail_mode:
-            self._show_network_stats(trainer.model)
+            self._show_network_stats(model)
         
         plt.pause(self.interval)
 
-    # 最初の畳み込み層のフィルターを別ウィンドウで可視化する
+    def _show_loss(self, trainer):
+        self.ax_loss.cla()
+        # いろいろな属性名に対応
+        loss_list = getattr(trainer, 'train_loss_list', 
+                    getattr(trainer, 'loss_history', 
+                    getattr(trainer, 'train_loss_history', [])))
+        
+        if len(loss_list) > 0:
+            self.ax_loss.plot(loss_list, color='purple', linewidth=1, label='Train Loss')
+            self.ax_loss.set_title("Learning Curve (Loss)")
+            self.ax_loss.set_xlabel("Iteration")
+            self.ax_loss.set_ylabel("Loss")
+            self.ax_loss.legend()
+            self.ax_loss.grid(True)
+
+    def _show_accuracy(self, trainer):
+        if self.ax_acc is None:
+            return
+            
+        self.ax_acc.cla()
+        train_acc = getattr(trainer, 'train_acc_list', [])
+        test_acc = getattr(trainer, 'test_acc_list', [])
+        
+        if len(train_acc) > 0:
+            epochs = np.arange(len(train_acc))
+            self.ax_acc.plot(epochs, train_acc, label='train acc', marker='o', markersize=3)
+            if len(test_acc) > 0 and len(test_acc) == len(train_acc):
+                self.ax_acc.plot(epochs, test_acc, label='test acc', linestyle='--', marker='x', markersize=3)
+            self.ax_acc.set_title("Accuracy Transition")
+            self.ax_acc.set_xlabel("Epochs")
+            self.ax_acc.set_ylabel("Accuracy")
+            self.ax_acc.set_ylim(0, 1.05)
+            self.ax_acc.legend(loc='lower right')
+            self.ax_acc.grid(True)
+        else:
+            self.ax_acc.set_title("Accuracy (No Data)")
+            if self.is_detail_mode:
+                self.ax_acc.set_axis_off()
+
+    def _show_network_stats(self, model):
+        if not hasattr(model, 'layers'):
+            return
+            
+        ax_w = self.axs[1, 0]
+        ax_A = self.axs[1, 1]
+        ax_dw = self.axs[1, 2]
+        
+        ax_w.cla()
+        ax_A.cla()
+        ax_dw.cla()
+
+        grad_names = []
+        grad_means = []
+        has_w_plot = False
+        has_A_plot = False
+        
+        for name, layer in model.layers.items():
+            if hasattr(layer, 'W') and layer.W is not None:
+                ax_w.hist(layer.W.flatten(), bins=30, alpha=0.5, label=name)
+                has_w_plot = True
+            
+            if hasattr(layer, 'out') and layer.out is not None:
+                ax_A.hist(layer.out.flatten(), bins=30, alpha=0.5, label=name)
+                has_A_plot = True
+            
+            if hasattr(layer, 'dW') and layer.dW is not None:
+                grad_names.append(name)
+                grad_means.append(np.mean(np.abs(layer.dW)))
+        
+        ax_w.set_title("Weight Distribution")
+        if has_w_plot: ax_w.legend(fontsize='x-small')
+        
+        ax_A.set_title("Activation Distribution")
+        if has_A_plot: ax_A.legend(fontsize='x-small')
+        
+        ax_dw.set_title("Mean Gradient Magnitude (|dW|)")
+        if grad_means:
+            x_pos = np.arange(len(grad_names))
+            ax_dw.bar(x_pos, grad_means, color='orange')
+            ax_dw.set_xticks(x_pos)
+            ax_dw.set_xticklabels(grad_names, rotation=45, ha='right', fontsize='small')
+
+    def _plot_2d(self, model, ax):
+        ax.set_title(f"Decision Boundary (2D)")
+        x_min, x_max = self.X[:, 0].min() - 0.5, self.X[:, 0].max() + 0.5
+        y_min, y_max = self.X[:, 1].min() - 0.5, self.X[:, 1].max() + 0.5
+        xx, yy = np.meshgrid(np.linspace(x_min, x_max, 50), np.linspace(y_min, y_max, 50))
+        grid_points = np.c_[xx.ravel(), yy.ravel()]
+        probs = model.predict(grid_points)
+        predicted_classes = np.argmax(probs, axis=1)
+        predicted_grid = predicted_classes.reshape(xx.shape)
+        ax.contourf(xx, yy, predicted_grid, alpha=0.3, cmap='tab10')
+        ax.scatter(self.X[:, 0], self.X[:, 1], c=self.Y_labels, cmap='tab10', edgecolors='k')
+
     def visualize_filters(self, model, title="CNN Filters"):
         # 最初のConvolution層を探す
         conv_layer = None
@@ -94,62 +188,6 @@ class Plotter:
         plt.axis('off')
         plt.title(title)
         plt.show()
-
-    def _show_loss(self, trainer):
-        self.ax_loss.cla()
-        self.ax_loss.plot(trainer.train_loss_list, color='purple', linewidth=2, label='Train Loss')
-        self.ax_loss.set_title("Learning Curve (Loss)")
-        self.ax_loss.set_xlabel("Iteration")
-        self.ax_loss.set_ylabel("Loss")
-        self.ax_loss.legend()
-        self.ax_loss.grid(True)
-
-    def _show_accuracy(self, trainer):
-        # メイン画面に余白（ax_accなど）がない場合、何もしない
-        # （将来的に[0, 2]に描画したい場合はここを拡張する）
-        pass
-
-    def _show_network_stats(self, model):
-        ax_w = self.axs[1, 0]
-        ax_A = self.axs[1, 1]
-        ax_dw = self.axs[1, 2]
-        
-        ax_w.cla()
-        ax_A.cla()
-        ax_dw.cla()
-
-        grad_names = []
-        grad_means = []
-        has_w_plot = False
-        has_A_plot = False
-        
-        for name, layer in model.layers.items():
-            if hasattr(layer, 'W') and layer.W is not None:
-                ax_w.hist(layer.W.flatten(), bins=30, alpha=0.5, label=name)
-                has_w_plot = True
-            
-            if hasattr(layer, 'out') and layer.out is not None:
-                ax_A.hist(layer.out.flatten(), bins=30, alpha=0.5, label=name)
-                has_A_plot = True
-            
-            if hasattr(layer, 'dW') and layer.dW is not None:
-                grad_names.append(name)
-                grad_means.append(np.mean(np.abs(layer.dW)))
-        
-        ax_w.set_title("Weight Distribution")
-        if has_w_plot:
-            ax_w.legend(fontsize='x-small')
-        
-        ax_A.set_title("Activation Distribution")
-        if has_A_plot:
-            ax_A.legend(fontsize='x-small')
-        
-        ax_dw.set_title("Mean Gradient Magnitude (|dW|)")
-        if grad_means:
-            x_pos = np.arange(len(grad_names))
-            ax_dw.bar(x_pos, grad_means, color='orange')
-            ax_dw.set_xticks(x_pos)
-            ax_dw.set_xticklabels(grad_names, rotation=45, ha='right', fontsize='small')
 
     def show_evaluation(self, model, X_test, Y_test):
         from sklearn.metrics import confusion_matrix
@@ -206,27 +244,3 @@ class Plotter:
 
     def finish(self):
         plt.show()
-
-    def _plot_1d(self, model, ax):
-        ax.set_title(f"Decision Boundary (1D)")
-        x_min, x_max = self.X[:, 0].min() - 0.5, self.X[:, 0].max() + 0.5
-        xx = np.linspace(x_min, x_max, 100).reshape(-1, 1)
-        probs = model.predict(xx)
-        cmap = plt.get_cmap('tab10')
-        for c in range(self.num_classes):
-            ax.plot(xx, probs[:, c], color=cmap(c), label=f'Class {c}')
-        ax.scatter(self.X[:, 0], np.zeros_like(self.Y_labels), c=self.Y_labels, cmap='tab10', edgecolors='k')
-        ax.set_ylim(-0.1, 1.1)
-        ax.legend(loc='upper right', fontsize='small')
-
-    def _plot_2d(self, model, ax):
-        ax.set_title(f"Decision Boundary (2D)")
-        x_min, x_max = self.X[:, 0].min() - 0.5, self.X[:, 0].max() + 0.5
-        y_min, y_max = self.X[:, 1].min() - 0.5, self.X[:, 1].max() + 0.5
-        xx, yy = np.meshgrid(np.linspace(x_min, x_max, 50), np.linspace(y_min, y_max, 50))
-        grid_points = np.c_[xx.ravel(), yy.ravel()]
-        probs = model.predict(grid_points)
-        predicted_classes = np.argmax(probs, axis=1)
-        predicted_grid = predicted_classes.reshape(xx.shape)
-        ax.contourf(xx, yy, predicted_grid, alpha=0.3, cmap='tab10')
-        ax.scatter(self.X[:, 0], self.X[:, 1], c=self.Y_labels, cmap='tab10', edgecolors='k')
