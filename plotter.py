@@ -33,56 +33,97 @@ class Plotter:
                 self.ax_loss = self.fig.add_subplot(1, 1, 1)
                 self.ax_data = None
 
-    def show(self, model):
-        self._show_loss(model)
+    def show(self, trainer):
+        self._show_loss(trainer)
+        self._show_accuracy(trainer)
         
+        # モデルの予測境界を表示（1D/2Dデータの場合）
         if self.input_dim == 2:
             self.ax_data.cla()
-            self._plot_2d(model, self.ax_data)
+            self._plot_2d(trainer.model, self.ax_data)
         elif self.input_dim == 1:
             self.ax_data.cla()
-            self._plot_1d(model, self.ax_data)
+            self._plot_1d(trainer.model, self.ax_data)
             
         if self.is_detail_mode:
-            self._show_network_stats(model)
+            self._show_network_stats(trainer.model)
         
         plt.pause(self.interval)
 
-    def _show_loss(self, model):
+    def _show_loss(self, trainer):
         self.ax_loss.cla()
-        self.ax_loss.plot(model.train_loss_history, color='purple', linewidth=2, label='Train Loss')
-        if hasattr(model, 'test_loss_history') and len(model.test_loss_history) > 0:
-            self.ax_loss.plot(model.test_loss_history, color='orange', linewidth=2, label='Test Loss')
-        self.ax_loss.set_title("Learning Curve")
+        self.ax_loss.plot(trainer.train_loss_list, color='purple', linewidth=2, label='Train Loss')
+        self.ax_loss.set_title("Learning Curve (Loss)")
         self.ax_loss.set_xlabel("Iteration")
         self.ax_loss.set_ylabel("Loss")
         self.ax_loss.legend()
         self.ax_loss.grid(True)
 
+    def _show_accuracy(self, trainer):
+        # 詳細モードの場合、別の軸にAccuracyを表示する
+        # 現状の2x3レイアウトを活かすため、特定のaxをAccuracy用に割り当てるか、
+        # 軸を共有（twinx）するなどの工夫が必要。
+        # ここでは簡単のため、もしAccuracyデータがあればLossと同じグラフに重ねるか
+        # 別のウィンドウ（または空いているax）を使います。
+        if not hasattr(trainer, 'train_acc_list'):
+            return
+            
+        # 仮に詳細モードの ax_data が使われていない（高次元データ）場合、そこを Accuracy グラフにする
+        if self.input_dim not in [1, 2] and self.ax_data is not None:
+            self.ax_data.cla()
+            self.ax_data.plot(trainer.train_acc_list, label='train acc')
+            self.ax_data.plot(trainer.test_acc_list, label='test acc', linestyle='--')
+            self.ax_data.set_title("Accuracy")
+            self.ax_data.set_xlabel("Epochs")
+            self.ax_data.set_ylabel("Accuracy")
+            self.ax_data.legend(loc='lower right')
+            self.ax_data.grid(True)
+
     def _show_network_stats(self, model):
         ax_w = self.axs[1, 0]
-        ax_w.cla()
-        for i, w in enumerate(model.W):
-            ax_w.hist(w.flatten(), bins=30, alpha=0.5, label=f"Layer {i}")
-        ax_w.set_title("Weight Distribution (W)")
-        ax_w.legend()
-
         ax_A = self.axs[1, 1]
-        ax_A.cla()
-        for i, a in enumerate(model.A):
-            if i == 0:
-                continue
-            ax_A.hist(a.flatten(), bins=30, alpha=0.5, label=f"Layer {i}")
-        ax_A.set_title("Activation Distribution (A)")
-        ax_A.legend()
-
         ax_dw = self.axs[1, 2]
+        
+        ax_w.cla()
+        ax_A.cla()
         ax_dw.cla()
-        if hasattr(model, 'dW'):
-            layer_labels = [f"L {i}" for i in range(len(model.dW))]
-            grad_means = [np.mean(np.abs(dw)) for dw in model.dW]
-            ax_dw.bar(layer_labels, grad_means, color='orange')
+
+        grad_names = []
+        grad_means = []
+        has_w_plot = False
+        has_A_plot = False
+        
+        for name, layer in model.layers.items():
+            # 重みの分布 (Affine, Convolutionなど)
+            if hasattr(layer, 'W') and layer.W is not None:
+                ax_w.hist(layer.W.flatten(), bins=30, alpha=0.5, label=name)
+                has_w_plot = True
+            
+            # 活性化値の分布 (各レイヤーの出力)
+            # 畳み込み層などの多次元出力はflattenして表示
+            if hasattr(layer, 'out') and layer.out is not None:
+                ax_A.hist(layer.out.flatten(), bins=30, alpha=0.5, label=name)
+                has_A_plot = True
+            
+            # 勾配の大きさ
+            if hasattr(layer, 'dW') and layer.dW is not None:
+                grad_names.append(name)
+                grad_means.append(np.mean(np.abs(layer.dW)))
+        
+        ax_w.set_title("Weight Distribution")
+        if has_w_plot:
+            ax_w.legend(fontsize='x-small')
+        
+        ax_A.set_title("Activation Distribution")
+        if has_A_plot:
+            ax_A.legend(fontsize='x-small')
+        
         ax_dw.set_title("Mean Gradient Magnitude (|dW|)")
+        if grad_means:
+            x_pos = np.arange(len(grad_names))
+            ax_dw.bar(x_pos, grad_means, color='orange')
+            ax_dw.set_xticks(x_pos)
+            ax_dw.set_xticklabels(grad_names, rotation=45, ha='right', fontsize='small')
 
     # 混同行列と誤認識データの詳細を表示する
     def show_evaluation(self, model, X_test, Y_test):
