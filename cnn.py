@@ -56,7 +56,7 @@ class CNN_Model:
         y = self.predict(x)
         return self.last_layer.forward(y, t)
 
-    def accuracy(self, x, t, batch_size=100):
+    def accuracy(self, x, t):
         """正解率を求める
         x: 予測データ
         t: 正解ラベル
@@ -65,13 +65,9 @@ class CNN_Model:
         if t.ndim != 1:
             t = np.argmax(t, axis=1)
 
-        num_correct = 0
-        for i in range(int(x.shape[0] / batch_size)):
-            tx = x[i*batch_size:(i+1)*batch_size]
-            tt = t[i*batch_size:(i+1)*batch_size]
-            y = self.predict(tx)
-            y = np.argmax(y, axis=1)
-            num_correct += np.sum(y == tt) 
+        y = self.predict(x)
+        y = np.argmax(y, axis=1)
+        num_correct = np.sum(y == t)
         
         return num_correct / x.shape[0]
 
