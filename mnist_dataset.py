@@ -25,8 +25,8 @@ class MnistDataset:
         Y = Y_all[:n_samples]
 
         # 訓練データとテストデータの分割 (標準は60000:10000)
-        # サンプル数が少ない場合は 6:1 の比率で分割
-        split_idx = min(60000, int(len(X) * 0.85))
+        # サンプル数が少ない場合は 9:1 の比率で分割
+        split_idx = min(60000, int(len(X) * 0.9))
 
         self.X_train = X[:split_idx]
         self.Y_train = Y[:split_idx]

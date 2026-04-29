@@ -7,9 +7,9 @@ def main():
     # --- ハイパーパラメータの設定 ---
     n_samples = 70000
     epochs = 20
-    mini_batch_size = 100
+    mini_batch_size = 1000
     optimizer = 'Momentum'
-    optimizer_param = {'lr': 0.01}
+    optimizer_param = {'lr': 0.05}
     evaluate_sample_num_per_epoch = 1000
     
     # --- データの準備 ---
@@ -47,7 +47,7 @@ def main():
 
     # --- 学習の実行 ---
     print("Start Training...")
-    for i in range(trainer.max_iter):
+    for _ in range(trainer.max_iter):
         trainer.train_step()
         
         # エポックごとにプロットを更新
