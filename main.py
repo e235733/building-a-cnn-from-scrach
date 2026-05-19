@@ -1,15 +1,15 @@
 from mnist_dataset import MnistDataset
-from cnn import CNN_Model
+from nn import NN_Model
 from common.trainer import Trainer
 from plotter import Plotter
 
 def main():
     # --- ハイパーパラメータの設定 ---
     n_samples = 70000
-    epochs = 20
+    epochs = 5
     mini_batch_size = 1000
     optimizer = 'Momentum'
-    optimizer_param = {'lr': 0.05}
+    optimizer_param = {'lr': 0.01}
     evaluate_sample_num_per_epoch = 1000
     
     # --- データの準備 ---
@@ -23,13 +23,7 @@ def main():
 
     # --- モデルの構築 ---
     print("Initializing CNN...")
-    model = CNN_Model(
-        input_dim=(1, 28, 28),
-        conv_param={'filter_num': 30, 'filter_size': 5, 'pad': 2, 'stride': 1},
-        hidden_size=100, 
-        output_size=10, 
-        weight_init_std=0.01
-    )
+    model = NN_Model(layer_config=[['Conv', 16, 5, 2, 1], ['Relu'], ['Pool', 2, 2, 2], ['Conv', 32, 5, 2, 1], ['Relu'], ['Pool', 2, 2, 2], ['Affine', 100], ['Relu'], ['Affine', 10]])
 
     # --- トレーナーの準備 ---
     trainer = Trainer(
