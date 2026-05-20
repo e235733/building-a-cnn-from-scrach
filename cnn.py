@@ -1,4 +1,6 @@
-import numpy as np
+from common import config
+GPU_ENABLE = config.GPU_ENABLE
+xp = config.get_xp()
 from common.layers import *
 from collections import OrderedDict
 
@@ -19,14 +21,14 @@ class CNN_Model:
         # パラメータの初期化
         self.params = {}
         self.params['W1'] = weight_init_std * \
-                            np.random.randn(filter_num, input_dim[0], filter_size, filter_size)
-        self.params['b1'] = np.zeros(filter_num)
+                            xp.random.randn(filter_num, input_dim[0], filter_size, filter_size)
+        self.params['b1'] = xp.zeros(filter_num)
         self.params['W2'] = weight_init_std * \
-                            np.random.randn(pool_output_size, hidden_size)
-        self.params['b2'] = np.zeros(hidden_size)
+                            xp.random.randn(pool_output_size, hidden_size)
+        self.params['b2'] = xp.zeros(hidden_size)
         self.params['W3'] = weight_init_std * \
-                            np.random.randn(hidden_size, output_size)
-        self.params['b3'] = np.zeros(output_size)
+                            xp.random.randn(hidden_size, output_size)
+        self.params['b3'] = xp.zeros(output_size)
 
         # レイヤの生成
         self.layers = OrderedDict()
@@ -63,11 +65,11 @@ class CNN_Model:
         batch_size: 正解率計算のバッチサイズ
         """
         if t.ndim != 1:
-            t = np.argmax(t, axis=1)
+            t = xp.argmax(t, axis=1)
 
         y = self.predict(x)
-        y = np.argmax(y, axis=1)
-        num_correct = np.sum(y == t)
+        y = xp.argmax(y, axis=1)
+        num_correct = xp.sum(y == t)
         
         return num_correct / x.shape[0]
 

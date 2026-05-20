@@ -1,4 +1,6 @@
-import numpy as np
+from common import config
+GPU_ENABLE = config.GPU_ENABLE
+xp = config.get_xp()
 
 class DataLoader:
     def __init__(self, X, Y, batch_size=1000, shuffle=True):
@@ -8,18 +10,18 @@ class DataLoader:
         self.shuffle = shuffle
         self.n_samples = X.shape[0]
 
-        self.indices = np.arange(self.n_samples)
+        self.indices = xp.arange(self.n_samples)
         self.reset()
 
     # 再シャッフルしてリセット
     def reset(self):
         self.current_idx = 0
         if self.shuffle:
-            np.random.shuffle(self.indices)
+            xp.random.shuffle(self.indices)
 
     
     def __len__(self):
-        return int(np.ceil(self.n_samples / self.batch_size))
+        return int(xp.ceil(self.n_samples / self.batch_size))
     
     def __iter__(self):
         self.reset()
@@ -43,8 +45,8 @@ class DataLoader:
     
 class DataNormalizer:
     def __init__(self, data):
-        self.mean = np.mean(data, axis=0)
-        self.std = np.std(data, axis=0) + 1e-8
+        self.mean = xp.mean(data, axis=0)
+        self.std = xp.std(data, axis=0) + 1e-8
 
     # 全体の統計量を使った正規化
     def normalize(self, data):
@@ -53,8 +55,8 @@ class DataNormalizer:
 
 if __name__ == "__main__":
     from data_loader import DataLoader
-    X = np.array([[1, 2, 3], [4, 5, 6], [7, 8, 9], [0, 1, 2], [3, 4, 5], [6, 7, 8], [9, 0, 1], [2, 3, 4], [5, 6, 7], [8, 9, 0]])
-    Y = np.array([0, 1, 0, 1, 0, 1, 0, 1, 0, 1])
+    X = xp.array([[1, 2, 3], [4, 5, 6], [7, 8, 9], [0, 1, 2], [3, 4, 5], [6, 7, 8], [9, 0, 1], [2, 3, 4], [5, 6, 7], [8, 9, 0]])
+    Y = xp.array([0, 1, 0, 1, 0, 1, 0, 1, 0, 1])
 
     data_loader = DataLoader(X, Y, 2, True)
 

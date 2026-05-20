@@ -1,4 +1,6 @@
-import numpy as np
+from common import config
+GPU_ENABLE = config.GPU_ENABLE
+xp = config.get_xp()
 from common.optimizer import *
 
 class Trainer:
@@ -21,7 +23,7 @@ class Trainer:
         self.optimizer = optimizer_class_dict[optimizer.lower()](**optimizer_param)
         
         self.train_size = x_train.shape[0]
-        self.iter_per_epoch = max(self.train_size / mini_batch_size, 1)
+        self.iter_per_epoch = max(self.train_size // mini_batch_size, 1)
         self.max_iter = int(epochs * self.iter_per_epoch)
         self.current_iter = 0
         self.current_epoch = 0
@@ -31,19 +33,33 @@ class Trainer:
         self.test_acc_list = []
 
     def train_step(self):
-        batch_mask = np.random.choice(self.train_size, self.batch_size)
+        batch_mask = xp.random.choice(self.train_size, self.batch_size)
         x_batch = self.x_train[batch_mask]
         t_batch = self.t_train[batch_mask]
         
+        x_batch = xp.asarray(x_batch)
+        t_batch = xp.asarray(t_batch)
+
         grads = self.model.gradient(x_batch, t_batch)
         self.optimizer.update(self.model.params, grads)
         
         loss = self.model.loss(x_batch, t_batch)
+        if hasattr(loss, 'get'):
+            loss = loss.get()
         self.train_loss_list.append(loss)
         
-        if self.current_iter % self.iter_per_epoch == 0:
-            self.current_epoch += 1
-            
+        # 判定条件：
+        # 1. 最初 (current_iter == 0) -> epoch 0
+        # 2. 各エポックの終了時 ((current_iter + 1) % iter_per_epoch == 0) -> epoch 1, 2, ...
+        if self.current_iter % self.iter_per_epoch == 0 or (self.current_iter + 1) == self.max_iter:
+            # 表示用のエポック数
+            if self.current_iter == 0:
+                display_epoch = 0
+            else:
+                display_epoch = (self.current_iter + 1) // self.iter_per_epoch
+                # 最終ステップが中途半端な場合でも最大エポック数を超えないように
+                display_epoch = min(display_epoch, self.epochs)
+
             x_train_sample, t_train_sample = self.x_train, self.t_train
             x_test_sample, t_test_sample = self.x_test, self.t_test
             if not self.evaluate_sample_num_per_epoch is None:
@@ -53,10 +69,19 @@ class Trainer:
                 
             train_acc = self.model.accuracy(x_train_sample, t_train_sample)
             test_acc = self.model.accuracy(x_test_sample, t_test_sample)
+
+            if hasattr(train_acc, 'get'):
+                train_acc = train_acc.get()
+            if hasattr(test_acc, 'get'):
+                test_acc = test_acc.get()
+
+            # 重複して追加されないようにチェック（最終ステップがちょうどエポック境界の場合など）
+            # ただし、今回はシンプルに current_iter == 0 または エポック終了時 で判定
             self.train_acc_list.append(train_acc)
             self.test_acc_list.append(test_acc)
 
-            if self.verbose: print("=== epoch:" + str(self.current_epoch) + ", train acc:" + str(train_acc) + ", test acc:" + str(test_acc) + " ===")
+            if self.verbose: print(f"=== epoch: {display_epoch}, train acc: {train_acc}, test acc: {test_acc} ===")
+            
         self.current_iter += 1
 
     def train(self):
@@ -64,6 +89,8 @@ class Trainer:
             self.train_step()
 
         test_acc = self.model.accuracy(self.x_test, self.t_test)
+        if hasattr(test_acc, 'get'):
+            test_acc = test_acc.get()
 
         if self.verbose:
             print("=============== Final Test Accuracy ===============")

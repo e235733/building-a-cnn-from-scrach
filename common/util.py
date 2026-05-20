@@ -1,12 +1,14 @@
-import numpy as np
+from common import config
+GPU_ENABLE = config.GPU_ENABLE
+xp = config.get_xp()
 
 def im2col(input_data, filter_h, filter_w, stride=1, pad=0):
     N, C, H, W = input_data.shape
     out_h = (H + 2*pad - filter_h)//stride + 1
     out_w = (W + 2*pad - filter_w)//stride + 1
 
-    img = np.pad(input_data, [(0,0), (0,0), (pad, pad), (pad, pad)], 'constant')
-    col = np.zeros((N, C, filter_h, filter_w, out_h, out_w))
+    img = xp.pad(input_data, [(0,0), (0,0), (pad, pad), (pad, pad)], 'constant')
+    col = xp.zeros((N, C, filter_h, filter_w, out_h, out_w))
 
     for y in range(filter_h):
         y_max = y + stride*out_h
@@ -24,7 +26,7 @@ def col2im(col, input_shape, filter_h, filter_w, stride=1, pad=0):
     out_w = (W + 2*pad - filter_w)//stride + 1
     col = col.reshape(N, out_h, out_w, C, filter_h, filter_w).transpose(0, 3, 4, 5, 1, 2)
 
-    img = np.zeros((N, C, H + 2*pad + stride - 1, W + 2*pad + stride - 1))
+    img = xp.zeros((N, C, H + 2*pad + stride - 1, W + 2*pad + stride - 1))
     for y in range(filter_h):
         y_max = y + stride*out_h
         for x in range(filter_w):

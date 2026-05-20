@@ -1,4 +1,6 @@
-import numpy as np
+from common import config
+GPU_ENABLE = config.GPU_ENABLE
+xp = config.get_xp()
 
 
 def identity_function(x):
@@ -6,12 +8,12 @@ def identity_function(x):
 
 
 def step_function(x):
-    return np.array(x > 0, dtype=int)
+    return xp.array(x > 0, dtype=int)
 
 
 def sigmoid(x):
-    x_clipped = np.clip(x, -250, 250)
-    return 1 / (1 + np.exp(-x_clipped))
+    x_clipped = xp.clip(x, -250, 250)
+    return 1 / (1 + xp.exp(-x_clipped))
 
 
 def sigmoid_grad(x):
@@ -19,40 +21,40 @@ def sigmoid_grad(x):
 
 
 def tanh(x):
-    return np.tanh(x)
+    return xp.tanh(x)
 
 
 def tanh_grad(x):
-    return 1 - np.tanh(x) ** 2
+    return 1 - xp.tanh(x) ** 2
 
 
 def relu(x):
-    return np.maximum(0, x)
+    return xp.maximum(0, x)
 
 
 def relu_grad(x):
-    grad = np.zeros_like(x)
+    grad = xp.zeros_like(x)
     grad[x>=0] = 1
     return grad
 
 
 def leaky_relu(x, alpha):
-    return np.maximum(x, x*alpha)
+    return xp.maximum(x, x*alpha)
 
 
 def leaky_relu_grad(x, alpha):
-    grad = np.ones_like(x)
+    grad = xp.ones_like(x)
     grad[x<0] = alpha
     return grad
 
 
 def softmax(x):
-    x = x - np.max(x, axis=-1, keepdims=True)
-    return np.exp(x) / np.sum(np.exp(x), axis=-1, keepdims=True)
+    x = x - xp.max(x, axis=-1, keepdims=True)
+    return xp.exp(x) / xp.sum(xp.exp(x), axis=-1, keepdims=True)
 
 
 def sum_squared_error(y, t):
-    return 0.5 * np.sum((y-t)**2)
+    return 0.5 * xp.sum((y-t)**2)
 
 
 def cross_entropy_error(p, y):
@@ -64,7 +66,7 @@ def cross_entropy_error(p, y):
         y = y.argmax(axis=1)
 
     batch_size = y.shape[0]
-    return -np.sum(np.log(p[np.arange(batch_size), y] + 1e-7)) / batch_size
+    return -xp.sum(xp.log(p[xp.arange(batch_size), y] + 1e-7)) / batch_size
 
 
 def softmax_loss(A, y):

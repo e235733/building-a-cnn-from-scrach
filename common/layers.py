@@ -1,4 +1,6 @@
-import numpy as np
+from common import config
+GPU_ENABLE = config.GPU_ENABLE
+xp = config.get_xp()
 from common.functions import *
 from common.util import *
 
@@ -20,7 +22,7 @@ class Tanh:
         self.out = None
 
     def forward(self, x):
-        self.out = np.tanh(x)
+        self.out = xp.tanh(x)
         return self.out
 
     def backward(self, dout):
@@ -83,7 +85,7 @@ class SoftmaxWithLoss:
             dx = (self.y - self.t) / batch_size
         else:
             dx = self.y.copy()
-            dx[np.arange(batch_size), self.t] -= 1
+            dx[xp.arange(batch_size), self.t] -= 1
             dx = dx / batch_size
         return dx
 
@@ -105,14 +107,14 @@ class Affine:
         x = x.reshape(x.shape[0], -1)
         self.x = x
 
-        out = np.dot(self.x, self.W) + self.b
+        out = xp.dot(self.x, self.W) + self.b
         self.out = out
         return out
 
     def backward(self, dout):
-        dx = np.dot(dout, self.W.T)
-        self.dW = np.dot(self.x.T, dout)
-        self.db = np.sum(dout, axis=0)
+        dx = xp.dot(dout, self.W.T)
+        self.dW = xp.dot(self.x.T, dout)
+        self.db = xp.sum(dout, axis=0)
         
         return dx.reshape(*self.original_x_shape)
 
@@ -143,7 +145,7 @@ class Convolution:
         col = im2col(x, FH, FW, self.stride, self.pad)
         col_W = self.W.reshape(FN, -1).T
 
-        out = np.dot(col, col_W) + self.b
+        out = xp.dot(col, col_W) + self.b
         out = out.reshape(N, out_h, out_w, FN).transpose(0, 3, 1, 2)
 
         self.x = x
@@ -157,11 +159,11 @@ class Convolution:
         FN, C, FH, FW = self.W.shape
         dout = dout.transpose(0, 2, 3, 1).reshape(-1, FN)
 
-        self.db = np.sum(dout, axis=0)
-        self.dW = np.dot(self.col.T, dout)
+        self.db = xp.sum(dout, axis=0)
+        self.dW = xp.dot(self.col.T, dout)
         self.dW = self.dW.transpose(1, 0).reshape(FN, C, FH, FW)
 
-        dcol = np.dot(dout, self.col_W.T)
+        dcol = xp.dot(dout, self.col_W.T)
         dx = col2im(dcol, self.x.shape, FH, FW, self.stride, self.pad)
 
         return dx
@@ -186,8 +188,8 @@ class Pooling:
         col = im2col(x, self.pool_h, self.pool_w, self.stride, self.pad)
         col = col.reshape(-1, self.pool_h*self.pool_w)
 
-        arg_max = np.argmax(col, axis=1)
-        out = np.max(col, axis=1)
+        arg_max = xp.argmax(col, axis=1)
+        out = xp.max(col, axis=1)
         out = out.reshape(N, out_h, out_w, C).transpose(0, 3, 1, 2)
 
         self.x = x
@@ -200,8 +202,8 @@ class Pooling:
         dout = dout.transpose(0, 2, 3, 1)
         
         pool_size = self.pool_h * self.pool_w
-        dmax = np.zeros((dout.size, pool_size))
-        dmax[np.arange(self.arg_max.size), self.arg_max.flatten()] = dout.flatten()
+        dmax = xp.zeros((dout.size, pool_size))
+        dmax[xp.arange(self.arg_max.size), self.arg_max.flatten()] = dout.flatten()
         dmax = dmax.reshape(dout.shape + (pool_size,)) 
         
         dcol = dmax.reshape(dmax.shape[0] * dmax.shape[1] * dmax.shape[2], -1)

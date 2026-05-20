@@ -1,4 +1,6 @@
-import numpy as np
+from common import config
+GPU_ENABLE = config.GPU_ENABLE
+xp = config.get_xp()
 from common.layers import *
 from collections import OrderedDict
 
@@ -13,7 +15,7 @@ class NN_Model:
 
         latest_dim = input_dim
         param_count = 0
-        layer_count = {'Conv': 0, 'Pool': 0, 'Affine': 0, 'Relu': 0}
+        layer_count = {'Conv': 0, 'Pool': 0, 'Affine': 0, 'Relu': 0, 'LeakyRelu': 0}
         
         for i, l in enumerate(layer_config):
             match l[0]:
@@ -31,9 +33,9 @@ class NN_Model:
                     param_ord = str(param_count)
 
                     self.params['W'+param_ord] = weight_init_std * \
-                    np.random.randn(filter_num, latest_dim[0], filter_size, filter_size)
+                    xp.random.randn(filter_num, latest_dim[0], filter_size, filter_size)
 
-                    self.params['b'+param_ord] = np.zeros(filter_num)
+                    self.params['b'+param_ord] = xp.zeros(filter_num)
 
                     layer_count['Conv'] += 1
                     layer_ord = str(layer_count['Conv'])
@@ -71,8 +73,8 @@ class NN_Model:
                     param_ord = str(param_count)
 
                     self.params['W'+param_ord] = weight_init_std * \
-                    np.random.randn(input_size, output_size)
-                    self.params['b'+param_ord] = np.zeros(output_size)
+                    xp.random.randn(input_size, output_size)
+                    self.params['b'+param_ord] = xp.zeros(output_size)
 
                     layer_count['Affine'] += 1
                     layer_ord = str(layer_count['Affine'])
@@ -85,16 +87,21 @@ class NN_Model:
                     layer_ord = str(layer_count['Relu'])
                     self.layers['Relu'+layer_ord] = Relu()
 
+                case 'LeakyRelu':
+                    layer_count['LeakyRelu'] += 1
+                    layer_ord = str(layer_count['LeakyRelu'])
+                    self.layers['LeakyRelu'+layer_ord] = LeakyRelu()
+
         match last_layer:
             case 'Softmax':
                 self.last_layer = SoftmaxWithLoss()
 
     def _get_weight_init_std(self, weight_init_type, node_num):
         """重みの標準偏差を計算する"""
-        if str(weight_init_type).lower() in ('relu', 'he'):
-            return np.sqrt(2.0 / node_num)
+        if str(weight_init_type).lower() in ('relu', 'he', 'leakyrelu'):
+            return xp.sqrt(2.0 / node_num)
         elif str(weight_init_type).lower() in ('sigmoid', 'xavier'):
-            return np.sqrt(1.0 / node_num)
+            return xp.sqrt(1.0 / node_num)
         
         # 数値指定（固定値）の場合
         try:
@@ -102,34 +109,54 @@ class NN_Model:
         except (ValueError, TypeError):
             return 0.01
 
-    def predict(self, x):
+    def predict(self, x, batch_size=None):
         """順伝播による予測
         x: 入力データ
         """
-        for layer in self.layers.values():
-            x = layer.forward(x)
-        return x
+        x = xp.asarray(x)
+        
+        # 巨大なデータの入力に対応するためバッチ処理で計算（OOM対策）
+        # 学習時のforwardで中間状態が上書きされるのを防ぐため、明示的な指定がない場合は一括で処理する
+        if batch_size is not None and x.shape[0] > batch_size:
+            result = None
+            for i in range(int(xp.ceil(x.shape[0] / batch_size))):
+                tx = x[i*batch_size:(i+1)*batch_size]
+                # 各バッチに対して順伝播
+                out = tx
+                for layer in self.layers.values():
+                    out = layer.forward(out)
+                
+                if result is None:
+                    # 出力形状の動的取得と初期化
+                    result = xp.zeros((x.shape[0], *out.shape[1:]), dtype=out.dtype)
+                result[i*batch_size:(i+1)*batch_size] = out
+            return result
+        else:
+            for layer in self.layers.values():
+                x = layer.forward(x)
+            return x
 
     def loss(self, x, t):
         """損失関数を求める
         x: 予測データ
         t: 正解ラベル
         """
-        y = self.predict(x)
+        # 勾配計算に必要な中間状態を保存するため、バッチ分割せずに順伝播を行う
+        y = self.predict(x, batch_size=None)
         return self.last_layer.forward(y, t)
 
-    def accuracy(self, x, t):
+    def accuracy(self, x, t, batch_size=64):
         """正解率を求める
         x: 予測データ
         t: 正解ラベル
         batch_size: 正解率計算のバッチサイズ
         """
         if t.ndim != 1:
-            t = np.argmax(t, axis=1)
+            t = xp.argmax(t, axis=1)
 
-        y = self.predict(x)
-        y = np.argmax(y, axis=1)
-        num_correct = np.sum(y == t)
+        y = self.predict(x, batch_size=batch_size)
+        y = xp.argmax(y, axis=1)
+        num_correct = xp.sum(y == t)
         
         return num_correct / x.shape[0]
 
