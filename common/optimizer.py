@@ -1,4 +1,6 @@
-import numpy as np
+from common import config
+GPU_ENABLE = config.GPU_ENABLE
+xp = config.get_xp()
 
 class SGD:
     def __init__(self, lr=0.01):
@@ -19,7 +21,7 @@ class Momentum:
         if self.v is None:
             self.v = {}
             for key, val in params.items():                                
-                self.v[key] = np.zeros_like(val)
+                self.v[key] = xp.zeros_like(val)
                 
         for key in params.keys():
             self.v[key] = self.momentum * self.v[key] - self.lr * grads[key]

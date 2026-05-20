@@ -1,5 +1,7 @@
+from common import config
+GPU_ENABLE = config.GPU_ENABLE
+xp = config.get_xp()
 from abc import ABC, abstractmethod
-import numpy as np
 
 class ActivationFunction(ABC):
 
@@ -17,12 +19,12 @@ class ActivationFunction(ABC):
 
 class Sigmoid(ActivationFunction):
     def init_weight(self, head, tail):
-        return np.sqrt(2 / (head + tail))
+        return xp.sqrt(2 / (head + tail))
 
     def value(self, X):
         # 警告を防ぐため、-250 から 250 の範囲にクリッピング（速度アップと安定化）
-        X_clipped = np.clip(X, -250, 250)
-        exp = np.exp(-X_clipped)
+        X_clipped = xp.clip(X, -250, 250)
+        exp = xp.exp(-X_clipped)
         return 1 / (exp + 1)
     
     def diff(self, Y):
@@ -30,21 +32,21 @@ class Sigmoid(ActivationFunction):
     
 class Tanh(ActivationFunction):
     def init_weight(self, head, tail):
-        return np.sqrt(2 / (head + tail))
+        return xp.sqrt(2 / (head + tail))
 
     def value(self, X):
-        return np.tanh(X)
+        return xp.tanh(X)
     
     def diff(self, Y):
         return 1 - Y**2
     
 class ReLU(ActivationFunction):
     def init_weight(self, head, tail):
-        return np.sqrt(2 / head)
+        return xp.sqrt(2 / head)
     
     def value(self, X):
         eps = 1e-15
-        return np.maximum(-eps, X)
+        return xp.maximum(-eps, X)
     
     def diff(self, Y):
         return (Y >= 0).astype(float)
@@ -54,15 +56,15 @@ class LeakyReLU(ActivationFunction):
         self.alpha = alpha
 
     def init_weight(self, head, tail):
-        return np.sqrt(2 / head)
+        return xp.sqrt(2 / head)
     
     def value(self, X):
-        return np.maximum(X, X * self.alpha)
+        return xp.maximum(X, X * self.alpha)
     
     def diff(self, Y):
         # Yが0より大きければ1.0、小さければalphaの配列を作る
-        # np.ones_like で Y と同じ形の 1.0 の配列を作り、0以下の場所を alpha で上書き
-        d = np.ones_like(Y)
+        # xp.ones_like で Y と同じ形の 1.0 の配列を作り、0以下の場所を alpha で上書き
+        d = xp.ones_like(Y)
         d[Y < 0] = self.alpha
         return d
 
@@ -84,18 +86,18 @@ class OutputFunction(ABC):
 class Softmax(OutputFunction):        
     def value(self, X):
         eps = 1e-15
-        X_max = np.max(X, axis=1, keepdims=True)
-        exp_X = np.exp(X - X_max)
-        sum_exp = np.sum(exp_X,axis=1,keepdims=True)
+        X_max = xp.max(X, axis=1, keepdims=True)
+        exp_X = xp.exp(X - X_max)
+        sum_exp = xp.sum(exp_X,axis=1,keepdims=True)
         return exp_X / (sum_exp + eps)
     
     def Loss(self, P, Y):
         # Pが0や1にならないように極小値を挟む        
         eps = 1e-15
-        P_clipped = np.clip(P, eps, 1 - eps)
-        logP = np.log(P_clipped)
+        P_clipped = xp.clip(P, eps, 1 - eps)
+        logP = xp.log(P_clipped)
         batch_size = P.shape[0]
-        loss = -np.sum(Y * logP) / batch_size
+        loss = -xp.sum(Y * logP) / batch_size
         return loss
    
     def dLoss(self, P, Y):
@@ -107,7 +109,7 @@ class Identity(OutputFunction):
         return X
     
     def Loss(self, P, Y):
-        return np.mean((P - Y)**2)
+        return xp.mean((P - Y)**2)
     
     def dLoss(self, P, Y):
         size_P = P.size

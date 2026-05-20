@@ -1,13 +1,27 @@
+import matplotlib
+# 画面出力がない環境（サーバ等）でのエラーを防ぐ
+import os
+if os.environ.get('DISPLAY','') == '':
+    matplotlib.use('Agg')
+
 import matplotlib.pyplot as plt
 import numpy as np
+from common import config
+GPU_ENABLE = config.GPU_ENABLE
+xp = config.get_xp()
+
+def to_cpu(x):
+    if hasattr(x, 'get'):
+        return x.get()
+    return x
 
 class Plotter:
     def __init__(self, interval, X, Y, is_detail_mode=False):
         self.interval = interval
-        self.X = X
+        self.X = to_cpu(X)
         # one-hot to integer labels
-        self.Y_labels = np.argmax(Y, axis=1) if Y.ndim > 1 else Y
-        self.num_classes = int(np.max(self.Y_labels) + 1)
+        self.Y_labels = to_cpu(xp.argmax(Y, axis=1) if Y.ndim > 1 else Y)
+        self.num_classes = int(to_cpu(xp.max(self.Y_labels)) + 1)
         self.is_detail_mode = is_detail_mode
         self.input_dim = X.shape[1]
         
@@ -36,7 +50,7 @@ class Plotter:
                 self.ax_acc = self.fig.add_subplot(1, 2, 2)
                 self.ax_data = None
 
-    def show(self, trainer):
+    def show(self, trainer, save_path=None):
         # trainerかmodelかを自動判別
         model = getattr(trainer, 'model', trainer)
         
@@ -52,7 +66,11 @@ class Plotter:
         if self.is_detail_mode:
             self._show_network_stats(model)
         
-        plt.pause(self.interval)
+        if save_path:
+            plt.savefig(save_path)
+            print(f"Plot saved to {save_path}")
+        elif matplotlib.get_backend() != 'agg':
+            plt.pause(self.interval)
 
     def _show_loss(self, trainer):
         self.ax_loss.cla()
@@ -62,7 +80,7 @@ class Plotter:
                     getattr(trainer, 'train_loss_history', [])))
         
         if len(loss_list) > 0:
-            self.ax_loss.plot(loss_list, color='purple', linewidth=1, label='Train Loss')
+            self.ax_loss.plot([to_cpu(l) for l in loss_list], color='purple', linewidth=1, label='Train Loss')
             self.ax_loss.set_title("Learning Curve (Loss)")
             self.ax_loss.set_xlabel("Iteration")
             self.ax_loss.set_ylabel("Loss")
@@ -79,9 +97,9 @@ class Plotter:
         
         if len(train_acc) > 0:
             epochs = np.arange(len(train_acc))
-            self.ax_acc.plot(epochs, train_acc, label='train acc', marker='o', markersize=3)
+            self.ax_acc.plot(epochs, [to_cpu(a) for a in train_acc], label='train acc', marker='o', markersize=3)
             if len(test_acc) > 0 and len(test_acc) == len(train_acc):
-                self.ax_acc.plot(epochs, test_acc, label='test acc', linestyle='--', marker='x', markersize=3)
+                self.ax_acc.plot(epochs, [to_cpu(a) for a in test_acc], label='test acc', linestyle='--', marker='x', markersize=3)
             self.ax_acc.set_title("Accuracy Transition")
             self.ax_acc.set_xlabel("Epochs")
             self.ax_acc.set_ylabel("Accuracy")
@@ -112,16 +130,16 @@ class Plotter:
         
         for name, layer in model.layers.items():
             if hasattr(layer, 'W') and layer.W is not None:
-                ax_w.hist(layer.W.flatten(), bins=30, alpha=0.5, label=name)
+                ax_w.hist(to_cpu(layer.W).flatten(), bins=30, alpha=0.5, label=name)
                 has_w_plot = True
             
             if hasattr(layer, 'out') and layer.out is not None:
-                ax_A.hist(layer.out.flatten(), bins=30, alpha=0.5, label=name)
+                ax_A.hist(to_cpu(layer.out).flatten(), bins=30, alpha=0.5, label=name)
                 has_A_plot = True
             
             if hasattr(layer, 'dW') and layer.dW is not None:
                 grad_names.append(name)
-                grad_means.append(np.mean(np.abs(layer.dW)))
+                grad_means.append(float(to_cpu(xp.mean(xp.abs(layer.dW)))))
         
         ax_w.set_title("Weight Distribution")
         if has_w_plot: ax_w.legend(fontsize='x-small')
@@ -142,13 +160,16 @@ class Plotter:
         y_min, y_max = self.X[:, 1].min() - 0.5, self.X[:, 1].max() + 0.5
         xx, yy = np.meshgrid(np.linspace(x_min, x_max, 50), np.linspace(y_min, y_max, 50))
         grid_points = np.c_[xx.ravel(), yy.ravel()]
-        probs = model.predict(grid_points)
-        predicted_classes = np.argmax(probs, axis=1)
+        try:
+            probs = model.predict(grid_points, batch_size=32)
+        except TypeError:
+            probs = model.predict(grid_points)
+        predicted_classes = to_cpu(xp.argmax(probs, axis=1))
         predicted_grid = predicted_classes.reshape(xx.shape)
         ax.contourf(xx, yy, predicted_grid, alpha=0.3, cmap='tab10')
         ax.scatter(self.X[:, 0], self.X[:, 1], c=self.Y_labels, cmap='tab10', edgecolors='k')
 
-    def visualize_filters(self, model, title="CNN Filters"):
+    def visualize_filters(self, model, title="CNN Filters", save_path=None):
         # 最初のConvolution層を探す
         conv_layer = None
         for layer in model.layers.values():
@@ -161,7 +182,8 @@ class Plotter:
             print("No Convolutional layer with weights found in the model.")
             return
 
-        FN, C, FH, FW = conv_layer.W.shape
+        W = to_cpu(conv_layer.W)
+        FN, C, FH, FW = W.shape
         ny = int(np.ceil(np.sqrt(FN)))
         nx = int(np.ceil(FN / ny))
         
@@ -174,7 +196,7 @@ class Plotter:
         for i in range(FN):
             r = i // nx
             c = i % nx
-            w = conv_layer.W[i, 0] # 最初のみchを表示
+            w = W[i, 0] # 最初のみchを表示
             # 正規化 (0.0 - 1.0)
             w_min, w_max = np.min(w), np.max(w)
             w = (w - w_min) / (w_max - w_min + 1e-5)
@@ -187,16 +209,23 @@ class Plotter:
         plt.imshow(img, cmap='gray', interpolation='nearest')
         plt.axis('off')
         plt.title(title)
-        plt.show()
+        if save_path:
+            plt.savefig(save_path)
+        elif matplotlib.get_backend() != 'agg':
+            plt.show()
 
-    def show_evaluation(self, model, X_test, Y_test):
+    def show_evaluation(self, model, X_test, Y_test, save_path=None):
         from sklearn.metrics import confusion_matrix
         import seaborn as sns
         import matplotlib.gridspec as gridspec
 
-        probs = model.predict(X_test)
-        Y_pred = np.argmax(probs, axis=1)
-        Y_true = np.argmax(Y_test, axis=1) if Y_test.ndim > 1 else Y_test
+        try:
+            probs = model.predict(X_test, batch_size=32)
+        except TypeError:
+            probs = model.predict(X_test)
+        Y_pred = to_cpu(xp.argmax(probs, axis=1))
+        Y_true = to_cpu(xp.argmax(Y_test, axis=1) if Y_test.ndim > 1 else Y_test)
+        X_test_cpu = to_cpu(X_test)
 
         error_indices = np.where(Y_pred != Y_true)[0]
 
@@ -214,33 +243,40 @@ class Plotter:
             ax_msg = fig_eval.add_subplot(gs[:, 3:])
             ax_msg.text(0.5, 0.5, "Perfect! 0 Errors.", ha='center', va='center', fontsize=20)
             ax_msg.axis('off')
-            return
-
-        if self.input_dim == 784:
-            img_size = int(np.sqrt(self.input_dim))
-            num_show = min(9, len(error_indices))
-            for i in range(num_show):
-                idx = error_indices[i]
-                row = i // 3
-                col = 3 + (i % 3)
-                ax_img = fig_eval.add_subplot(gs[row, col])
-                ax_img.imshow(X_test[idx].reshape(img_size, img_size), cmap='gray')
-                ax_img.set_title(f"T:{Y_true[idx]} -> P:{Y_pred[idx]}", color='red', fontsize=10)
-                ax_img.axis('off')
-        elif self.input_dim == 2:
-            ax_err = fig_eval.add_subplot(gs[:, 3:])
-            ax_err.scatter(X_test[:, 0], X_test[:, 1], c=Y_true, cmap='tab10', alpha=0.2)
-            ax_err.scatter(X_test[error_indices, 0], X_test[error_indices, 1], color='red', marker='x', s=100)
-            ax_err.set_title("Error Distribution")
         else:
-            ax_txt = fig_eval.add_subplot(gs[:, 3:])
-            ax_txt.axis('off')
-            msg = "Misclassified Samples:\n"
-            num_show = min(10, len(error_indices))
-            for i in range(num_show):
-                idx = error_indices[i]
-                msg += f"Index {idx}: True={Y_true[idx]}, Pred={Y_pred[idx]}\n"
-            ax_txt.text(0.1, 0.9, msg, va='top')
+            if self.input_dim == 784:
+                img_size = int(np.sqrt(self.input_dim))
+                num_show = min(9, len(error_indices))
+                for i in range(num_show):
+                    idx = error_indices[i]
+                    row = i // 3
+                    col = 3 + (i % 3)
+                    ax_img = fig_eval.add_subplot(gs[row, col])
+                    ax_img.imshow(X_test_cpu[idx].reshape(img_size, img_size), cmap='gray')
+                    ax_img.set_title(f"T:{Y_true[idx]} -> P:{Y_pred[idx]}", color='red', fontsize=10)
+                    ax_img.axis('off')
+            elif self.input_dim == 2:
+                ax_err = fig_eval.add_subplot(gs[:, 3:])
+                ax_err.scatter(X_test_cpu[:, 0], X_test_cpu[:, 1], c=Y_true, cmap='tab10', alpha=0.2)
+                ax_err.scatter(X_test_cpu[error_indices, 0], X_test_cpu[error_indices, 1], color='red', marker='x', s=100)
+                ax_err.set_title("Error Distribution")
+            else:
+                ax_txt = fig_eval.add_subplot(gs[:, 3:])
+                ax_txt.axis('off')
+                msg = "Misclassified Samples:\n"
+                num_show = min(10, len(error_indices))
+                for i in range(num_show):
+                    idx = error_indices[i]
+                    msg += f"Index {idx}: True={Y_true[idx]}, Pred={Y_pred[idx]}\n"
+                ax_txt.text(0.1, 0.9, msg, va='top')
 
-    def finish(self):
-        plt.show()
+        if save_path:
+            plt.savefig(save_path)
+        elif matplotlib.get_backend() != 'agg':
+            plt.show()
+
+    def finish(self, save_path=None):
+        if save_path:
+            plt.savefig(save_path)
+        elif matplotlib.get_backend() != 'agg':
+            plt.show()

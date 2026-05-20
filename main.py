@@ -7,10 +7,10 @@ def main():
     # --- ハイパーパラメータの設定 ---
     n_samples = 70000
     epochs = 5
-    mini_batch_size = 1000
+    mini_batch_size = 128
     optimizer = 'Momentum'
     optimizer_param = {'lr': 0.01}
-    evaluate_sample_num_per_epoch = 1000
+    evaluate_sample_num_per_epoch = 10000
     
     # --- データの準備 ---
     dataset = MnistDataset(n_samples=n_samples)
@@ -23,7 +23,7 @@ def main():
 
     # --- モデルの構築 ---
     print("Initializing CNN...")
-    model = NN_Model(layer_config=[['Conv', 16, 5, 2, 1], ['Relu'], ['Pool', 2, 2, 2], ['Conv', 32, 5, 2, 1], ['Relu'], ['Pool', 2, 2, 2], ['Affine', 100], ['Relu'], ['Affine', 10]])
+    model = NN_Model(layer_config=[['Conv', 32, 3, 1, 1], ['LeakyRelu'], ['Pool', 2, 2, 2], ['Conv', 64, 3, 0, 1], ['LeakyRelu'], ['Pool', 2, 2, 2], ['Conv', 128, 3, 1, 1], ['LeakyRelu'], ['Pool', 2, 2, 2], ['Affine', 256], ['LeakyRelu'], ['Affine', 64], ['LeakyRelu'],  ['Affine', 10]])
 
     # --- トレーナーの準備 ---
     trainer = Trainer(
@@ -44,22 +44,18 @@ def main():
     for _ in range(trainer.max_iter):
         trainer.train_step()
         
-        # エポックごとにプロットを更新
-        if trainer.current_iter % trainer.iter_per_epoch == 0:
-            plotter.show(trainer)
-
     print("Training Finished.")
 
     # --- 結果の可視化と評価 ---
-    plotter.show(trainer)
+    plotter.show(trainer, save_path="training_result.png")
     
     print("Showing Evaluation...")
-    plotter.show_evaluation(model, x_test[:1000], t_test[:1000])
+    plotter.show_evaluation(model, x_test[:1000], t_test[:1000], save_path="evaluation.png")
     
     print("Visualizing CNN Filters...")
-    plotter.visualize_filters(model)
+    plotter.visualize_filters(model, save_path="filters.png")
     
-    plotter.finish()
+    plotter.finish(save_path="final_plot.png")
 
 if __name__ == '__main__':
     main()
