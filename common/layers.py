@@ -221,7 +221,7 @@ class BatchNormalization:
         # テスト時に使用する平均と分散
         self.running_mean = running_mean
         self.running_var = running_var
-    def forward(self, x:np, isTraining=True):
+    def forward(self, x, isTraining=True):
         self.input_shape = x.shape
         if x.ndim != 2:
             N, C, H, W = x.shape
@@ -229,17 +229,17 @@ class BatchNormalization:
         out = self.calc_forward(x,isTraining)
         return out.reshape(*self.input_shape)
     
-    def calc_forward(self, x:np, isTraining):
+    def calc_forward(self, x, isTraining):
         if self.running_mean is None:
             N, D = x.shape
-            self.running_mean = np.zeros(D)
-            self.running_var = np.zeros(D)
+            self.running_mean = xp.zeros(D)
+            self.running_var = xp.zeros(D)
 
         if isTraining:
             mu = x.mean(axis=0)
             xc = x - mu
-            var = np.mean(xc**2, axis=0)
-            std = np.sqrt(var + 10e-7)
+            var = xp.mean(xc**2, axis=0)
+            std = xp.sqrt(var + 10e-7)
             xn = xc / std
             
             self.batch_size = x.shape[0]
@@ -250,7 +250,7 @@ class BatchNormalization:
             self.running_var = self.momentum * self.running_var + (1-self.momentum) * var            
         else:
             xc = x - self.running_mean
-            xn = xc / ((np.sqrt(self.running_var + 10e-7)))
+            xn = xc / ((xp.sqrt(self.running_var + 10e-7)))
             
         out = self.gamma * xn + self.beta 
         return out
@@ -267,13 +267,13 @@ class BatchNormalization:
 
     def calc_backward(self, dout):
         dbeta = dout.sum(axis=0)
-        dgamma = np.sum(self.xn * dout, axis=0)
+        dgamma = xp.sum(self.xn * dout, axis=0)
         dxn = self.gamma * dout
         dxc = dxn / self.std
-        dstd = -np.sum((dxn * self.xc) / (self.std * self.std), axis=0)
+        dstd = -xp.sum((dxn * self.xc) / (self.std * self.std), axis=0)
         dvar = 0.5 * dstd / self.std
         dxc += (2.0 / self.batch_size) * self.xc * dvar
-        dmu = np.sum(dxc, axis=0)
+        dmu = xp.sum(dxc, axis=0)
         dx = dxc - dmu / self.batch_size
 
         self.dgamma = dgamma
