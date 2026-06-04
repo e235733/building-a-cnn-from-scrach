@@ -6,7 +6,7 @@ from plotter import Plotter
 def main():
     # --- ハイパーパラメータの設定 ---
     n_samples = 70000
-    epochs = 5
+    epochs = 10
     mini_batch_size = 128
     optimizer = 'Momentum'
     optimizer_param = {'lr': 0.01}
@@ -23,7 +23,15 @@ def main():
 
     # --- モデルの構築 ---
     print("Initializing CNN...")
-    model = NN_Model(layer_config=[['Conv', 32, 3, 1, 1], ['LeakyRelu'], ['Pool', 2, 2, 2], ['Conv', 64, 3, 0, 1], ['LeakyRelu'], ['Pool', 2, 2, 2], ['Conv', 128, 3, 1, 1], ['LeakyRelu'], ['Pool', 2, 2, 2], ['Affine', 256], ['LeakyRelu'], ['Affine', 64], ['LeakyRelu'],  ['Affine', 10]])
+    model = NN_Model(layer_config=[['Conv', 32, 3, 1, 1], ['LeakyRelu'],
+                                   ['Conv', 32, 3, 0, 1], ['LeakyRelu'],
+                                   ['Conv', 32, 3, 0, 1], ['LeakyRelu'], ['Pool', 2, 2, 2],
+                                   ['Conv', 64, 3, 1, 1], ['LeakyRelu'],
+                                   ['Conv', 64, 3, 0, 1], ['LeakyRelu'], ['Pool', 2, 2, 2],
+                                   ['Conv', 128, 3, 1, 1], ['LeakyRelu'],
+                                   ['Conv', 128, 3, 0, 1], ['LeakyRelu'],
+                                   ['Affine', 256], ['LeakyRelu'],
+                                   ['Affine', 10]])
 
     # --- トレーナーの準備 ---
     trainer = Trainer(
