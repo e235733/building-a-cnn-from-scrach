@@ -24,13 +24,13 @@ def main():
     # --- モデルの構築 ---
     print("Initializing CNN...")
     model = NN_Model(layer_config=[['Conv', 32, 3, 1, 1], ['LeakyRelu'],
-                                   ['Conv', 32, 3, 0, 1], ['LeakyRelu'],
-                                   ['Conv', 32, 3, 0, 1], ['LeakyRelu'], ['Pool', 2, 2, 2],
+                                   ['Conv', 32, 3, 1, 1], ['LeakyRelu'],
+                                   ['Conv', 32, 3, 1, 1], ['LeakyRelu'], ['Pool', 2, 2, 2],
                                    ['Conv', 64, 3, 1, 1], ['LeakyRelu'],
-                                   ['Conv', 64, 3, 0, 1], ['LeakyRelu'], ['Pool', 2, 2, 2],
-                                   ['Conv', 128, 3, 1, 1], ['LeakyRelu'],
+                                   ['Conv', 64, 3, 1, 1], ['LeakyRelu'],
+                                   ['Conv', 64, 3, 1, 1], ['LeakyRelu'], ['Pool', 2, 2, 2],
                                    ['Conv', 128, 3, 0, 1], ['LeakyRelu'],
-                                   ['Affine', 256], ['LeakyRelu'],
+                                   ['Conv', 128, 3, 0, 1], ['LeakyRelu'],
                                    ['Affine', 10]])
 
     # --- トレーナーの準備 ---

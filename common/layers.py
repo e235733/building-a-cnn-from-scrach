@@ -221,6 +221,7 @@ class BatchNormalization:
         # テスト時に使用する平均と分散
         self.running_mean = running_mean
         self.running_var = running_var
+
     def forward(self, x, isTraining=True):
         self.input_shape = x.shape
         if x.ndim != 2:
@@ -259,11 +260,9 @@ class BatchNormalization:
         if dout.ndim != 2:
             N, C, H, W = dout.shape
             dout = dout.reshape(N, -1)
-
+        
         dx = self.calc_backward(dout)
-
-        dx = dx.reshape(*self.input_shape)
-        return dx
+        return dx.reshape(*self.input_shape)
 
     def calc_backward(self, dout):
         dbeta = dout.sum(axis=0)
@@ -280,3 +279,21 @@ class BatchNormalization:
         self.dbeta = dbeta
 
         return dx
+    
+class Dropout:
+    """
+    http://arxiv.org/abs/1207.0580
+    """
+    def __init__(self, dropout_ratio=0.5):
+        self.dropout_ratio = dropout_ratio
+        self.mask = None
+
+    def forward(self, x, train_flg=True):
+        if train_flg:
+            self.mask = xp.random.rand(*x.shape) > self.dropout_ratio
+            return x * self.mask
+        else:
+            return x * (1.0 - self.dropout_ratio)
+
+    def backward(self, dout):
+        return dout * self.mask
