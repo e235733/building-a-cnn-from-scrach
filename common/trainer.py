@@ -33,6 +33,7 @@ class Trainer:
         self.test_acc_list = []
 
     def train_step(self):
+
         batch_mask = xp.random.choice(self.train_size, self.batch_size)
         x_batch = self.x_train[batch_mask]
         t_batch = self.t_train[batch_mask]
@@ -40,18 +41,26 @@ class Trainer:
         x_batch = xp.asarray(x_batch)
         t_batch = xp.asarray(t_batch)
 
+        # 訓練モード設定
+        if hasattr(self.model, 'is_training'):
+            self.model.is_training = True
+
         grads = self.model.gradient(x_batch, t_batch)
         self.optimizer.update(self.model.params, grads)
         
-        loss = self.model.loss(x_batch, t_batch)
-        if hasattr(loss, 'get'):
-            loss = loss.get()
+        loss = self.model.last_loss
         self.train_loss_list.append(loss)
+
+        # 評価モード設定
+        if hasattr(self.model, 'is_training'):
+            self.model.is_training = False
+
         
         # 判定条件：
         # 1. 最初 (current_iter == 0) -> epoch 0
         # 2. 各エポックの終了時 ((current_iter + 1) % iter_per_epoch == 0) -> epoch 1, 2, ...
         if self.current_iter % self.iter_per_epoch == 0 or (self.current_iter + 1) == self.max_iter:
+
             # 表示用のエポック数
             if self.current_iter == 0:
                 display_epoch = 0

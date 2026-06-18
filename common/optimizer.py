@@ -8,7 +8,8 @@ class SGD:
         
     def update(self, params, grads):
         for key in params.keys():
-            params[key] -= self.lr * grads[key] 
+            if key in grads:
+                params[key] -= self.lr * grads[key]
 
 
 class Momentum:
@@ -24,5 +25,6 @@ class Momentum:
                 self.v[key] = xp.zeros_like(val)
                 
         for key in params.keys():
-            self.v[key] = self.momentum * self.v[key] - self.lr * grads[key]
-            params[key] += self.v[key]
+            if key in grads:
+                self.v[key] = self.momentum * self.v[key] - self.lr * grads[key]
+                params[key] += self.v[key]

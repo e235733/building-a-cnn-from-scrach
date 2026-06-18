@@ -212,69 +212,98 @@ class Pooling:
         return dx
 
 class BatchNormalization:
-    def __init__(self, gamma, beta, momentum=0.9,
-                 running_mean=None, running_var=None):
+    def __init__(self, gamma, beta, momentum=0.9, eps=1e-7):
         self.gamma = gamma
         self.beta = beta
         self.momentum = momentum
+        self.eps = eps
 
         # テスト時に使用する平均と分散
-        self.running_mean = running_mean
-        self.running_var = running_var
+        self.running_mean = None
+        self.running_var = None
+        
+        # 逆伝播時に使用する中間値
+        self.batch_size = None
+        self.xn = None
+        self.std = None
+        self.dgamma = None
+        self.dbeta = None
 
-    def forward(self, x, isTraining=True):
-        self.input_shape = x.shape
-        if x.ndim != 2:
+    def forward(self, x, is_training=True):
+        # 4次元入力(N,C,H,W)を2次元に変換 
+        if x.ndim == 4:
             N, C, H, W = x.shape
-            x = x.reshape(N, -1)
-        out = self.calc_forward(x,isTraining)
-        return out.reshape(*self.input_shape)
+            x = x.transpose(0, 2, 3, 1) # NHWCに入れ替え
+            x = x.reshape(N*H*W, C)
+            out = self.calc_forward(x, is_training)
+            out = out.reshape(N, H, W, C).transpose(0, 3, 1, 2) # NCHWに戻す
+        elif x.ndim == 2:
+            out = self.calc_forward(x, is_training)
+        else:
+            raise ValueError(f"Unsupported input shape: {x.shape}")
+        
+        return out
     
-    def calc_forward(self, x, isTraining):
+    def calc_forward(self, x, is_training):
+        # 初回のみ running_mean, running_var を初期化
         if self.running_mean is None:
             N, D = x.shape
             self.running_mean = xp.zeros(D)
-            self.running_var = xp.zeros(D)
+            self.running_var = xp.ones(D)
 
-        if isTraining:
+        if is_training:
+            # バッチ統計量の計算
             mu = x.mean(axis=0)
             xc = x - mu
             var = xp.mean(xc**2, axis=0)
-            std = xp.sqrt(var + 10e-7)
+            std = xp.sqrt(var + self.eps)
             xn = xc / std
             
+            # 逆伝播用に保存
             self.batch_size = x.shape[0]
             self.xc = xc
             self.xn = xn
             self.std = std
-            self.running_mean = self.momentum * self.running_mean + (1-self.momentum) * mu
-            self.running_var = self.momentum * self.running_var + (1-self.momentum) * var            
+            
+            # 実行時平均・分散の更新（指数移動平均）
+            self.running_mean = self.momentum * self.running_mean + (1 - self.momentum) * mu
+            self.running_var = self.momentum * self.running_var + (1 - self.momentum) * var            
         else:
+            # テスト時：保存された平均・分散を使用
             xc = x - self.running_mean
-            xn = xc / ((xp.sqrt(self.running_var + 10e-7)))
+            std = xp.sqrt(self.running_var + self.eps)
+            xn = xc / std
             
         out = self.gamma * xn + self.beta 
         return out
 
     def backward(self, dout):
-        if dout.ndim != 2:
+        if dout.ndim == 4:
             N, C, H, W = dout.shape
-            dout = dout.reshape(N, -1)
-        
-        dx = self.calc_backward(dout)
-        return dx.reshape(*self.input_shape)
+            dout = dout.transpose(0, 2, 3, 1)
+            dout = dout.reshape(N*H*W, C)
+            dx = self.calc_backward(dout)
+            dx = dx.reshape(N, H, W, C).transpose(0, 3, 1, 2)
+        elif dout.ndim == 2:
+            dx = self.calc_backward(dout)
+        else:
+            raise ValueError(f"Unsupported dout shape: {dout.shape}")
+        return dx
 
     def calc_backward(self, dout):
-        dbeta = dout.sum(axis=0)
+        # パラメータ勾配の計算
+        dbeta = xp.sum(dout, axis=0)
         dgamma = xp.sum(self.xn * dout, axis=0)
+        
+        # 入力勾配の計算（逆正規化）
         dxn = self.gamma * dout
-        dxc = dxn / self.std
-        dstd = -xp.sum((dxn * self.xc) / (self.std * self.std), axis=0)
-        dvar = 0.5 * dstd / self.std
-        dxc += (2.0 / self.batch_size) * self.xc * dvar
+        dstd = xp.sum(dxn * self.xc, axis=0) * (-1.0) / (self.std**2)
+        dvar = dstd * 0.5 / self.std
+        dxc = dxn / self.std + (2.0 / self.batch_size) * self.xc * dvar
         dmu = xp.sum(dxc, axis=0)
         dx = dxc - dmu / self.batch_size
 
+        # パラメータ勾配を保存
         self.dgamma = dgamma
         self.dbeta = dbeta
 
@@ -288,8 +317,8 @@ class Dropout:
         self.dropout_ratio = dropout_ratio
         self.mask = None
 
-    def forward(self, x, train_flg=True):
-        if train_flg:
+    def forward(self, x, is_training=True):
+        if is_training:
             self.mask = xp.random.rand(*x.shape) > self.dropout_ratio
             return x * self.mask
         else:
