@@ -28,3 +28,20 @@ class Momentum:
             if key in grads:
                 self.v[key] = self.momentum * self.v[key] - self.lr * grads[key]
                 params[key] += self.v[key]
+
+class RMSProp:
+    def __init__(self, lr=0.01, alpha=0.9):
+        self.lr = lr
+        self.alpha = alpha
+        self.h = None
+        
+    def update(self, params, grads):
+        if self.h is None:
+            self.h = {}
+            for key, val in params.items():                                
+                self.h[key] = xp.zeros_like(val)
+                
+        for key in params.keys():
+            if key in grads:
+                self.h[key] = self.alpha * self.h[key] - (1.0 - self.lr) * grads[key] ** 2
+                params[key] -= self.lr * grads[key] / (xp.sqrt(self.h[key]) + 1e-7)

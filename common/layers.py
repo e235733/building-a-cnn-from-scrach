@@ -295,13 +295,11 @@ class BatchNormalization:
         dbeta = xp.sum(dout, axis=0)
         dgamma = xp.sum(self.xn * dout, axis=0)
         
-        # 入力勾配の計算（逆正規化）
-        dxn = self.gamma * dout
-        dstd = xp.sum(dxn * self.xc, axis=0) * (-1.0) / (self.std**2)
-        dvar = dstd * 0.5 / self.std
-        dxc = dxn / self.std + (2.0 / self.batch_size) * self.xc * dvar
-        dmu = xp.sum(dxc, axis=0)
-        dx = dxc - dmu / self.batch_size
+        # 入力勾配の計算（数値的に安定した一括計算式）
+        dx = (self.gamma / (self.batch_size * self.std)) * (
+            self.batch_size * dout - xp.sum(dout, axis=0) - 
+            self.xn * xp.sum(dout * self.xn, axis=0)
+        )
 
         # パラメータ勾配を保存
         self.dgamma = dgamma
