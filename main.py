@@ -5,12 +5,12 @@ from plotter import Plotter
 
 def main():
     # --- ハイパーパラメータの設定 ---
-    n_samples = 2000
+    n_samples = 70000
     epochs = 10
     mini_batch_size = 128
     optimizer = 'Momentum'
     optimizer_param = {'lr': 0.1}
-    evaluate_sample_num_per_epoch = 1000
+    evaluate_sample_num_per_epoch = 10000
     
     # --- データの準備 ---
     dataset = MnistDataset(n_samples=n_samples)
