@@ -12,10 +12,11 @@ class NN_Model:
 
         self.params = {}
         self.layers = OrderedDict()
+        self.layer_params = OrderedDict()  # layer_name -> [param_keys]を記録
 
         latest_dim = input_dim
         param_count = 0
-        layer_count = {'Conv': 0, 'Pool': 0, 'Affine': 0, 'Relu': 0, 'LeakyRelu': 0, 'Dropout': 0}
+        layer_count = {'Conv': 0, 'Pool': 0, 'Affine': 0, 'Relu': 0, 'LeakyRelu': 0, 'Dropout': 0, 'ResidualBlock': 0}
         if use_batchnorm:
             layer_count['BatchNorm'] = 0
         
@@ -44,7 +45,9 @@ class NN_Model:
 
                     layer_count['Conv'] += 1
                     layer_ord = str(layer_count['Conv'])
-                    self.layers['Conv'+layer_ord] = Convolution(self.params['W'+param_ord], self.params['b'+param_ord], filter_stride, filter_pad)
+                    conv_layer_name = 'Conv'+layer_ord
+                    self.layers[conv_layer_name] = Convolution(self.params['W'+param_ord], self.params['b'+param_ord], filter_stride, filter_pad)
+                    self.layer_params[conv_layer_name] = ['W'+param_ord, 'b'+param_ord]
 
                     out_h = 1 + int((latest_dim[1] + 2*filter_pad - filter_size) / filter_stride)
                     out_w = 1 + int((latest_dim[2] + 2*filter_pad - filter_size) / filter_stride)
@@ -56,7 +59,9 @@ class NN_Model:
 
                         layer_count['BatchNorm'] += 1
                         layer_ord = str(layer_count['BatchNorm'])
-                        self.layers['BatchNorm'+layer_ord] = BatchNormalization(self.params['gamma'+param_ord], self.params['beta'+param_ord])
+                        bn_layer_name = 'BatchNorm'+layer_ord
+                        self.layers[bn_layer_name] = BatchNormalization(self.params['gamma'+param_ord], self.params['beta'+param_ord])
+                        self.layer_params[bn_layer_name] = ['gamma'+param_ord, 'beta'+param_ord]
                 
                 case 'Pool':
                     pool_h = l[1]
@@ -91,7 +96,9 @@ class NN_Model:
 
                     layer_count['Affine'] += 1
                     layer_ord = str(layer_count['Affine'])
-                    self.layers['Affine'+layer_ord] = Affine(self.params['W'+param_ord], self.params['b'+param_ord])
+                    affine_layer_name = 'Affine'+layer_ord
+                    self.layers[affine_layer_name] = Affine(self.params['W'+param_ord], self.params['b'+param_ord])
+                    self.layer_params[affine_layer_name] = ['W'+param_ord, 'b'+param_ord]
 
                     latest_dim = (output_size, )
 
@@ -109,6 +116,83 @@ class NN_Model:
                     layer_count['Dropout'] += 1
                     layer_ord = str(layer_count['Dropout'])
                     self.layers['Dropout'+layer_ord] = Dropout(0.5)
+
+                case 'ResidualBlock':
+                    # layer_config: ['ResidualBlock', out_channels, filter_size, stride, pad]
+                    # または: ['ResidualBlock', out_channels, filter_size, stride, pad, use_1x1_conv]
+                    out_channels = l[1]
+                    filter_size = l[2]
+                    stride = l[3] if len(l) > 3 else 1
+                    pad = l[4] if len(l) > 4 else 1
+                    use_1x1_conv_flag = l[5] if len(l) > 5 else (stride != 1 or out_channels != latest_dim[0])
+                    
+                    in_channels = latest_dim[0]
+                    
+                    # ノード数から初期値の標準偏差を計算
+                    node_num = in_channels * filter_size * filter_size
+                    weight_init_std = self._get_weight_init_std(weight_init_type, node_num)
+                    
+                    # メイン路の重み
+                    param_count += 1
+                    W1_key = 'W' + str(param_count)
+                    self.params[W1_key] = weight_init_std * \
+                        xp.random.randn(out_channels, in_channels, filter_size, filter_size)
+                    
+                    param_count += 1
+                    b1_key = 'b' + str(param_count)
+                    self.params[b1_key] = xp.zeros(out_channels)
+                    
+                    param_count += 1
+                    W2_key = 'W' + str(param_count)
+                    self.params[W2_key] = weight_init_std * \
+                        xp.random.randn(out_channels, out_channels, filter_size, filter_size)
+                    
+                    param_count += 1
+                    b2_key = 'b' + str(param_count)
+                    self.params[b2_key] = xp.zeros(out_channels)
+                    
+                    # 1x1 Conv の重み（必要な場合）
+                    if use_1x1_conv_flag:
+                        param_count += 1
+                        W_1x1_key = 'W' + str(param_count)
+                        self.params[W_1x1_key] = weight_init_std * \
+                            xp.random.randn(out_channels, in_channels, 1, 1)
+                        
+                        param_count += 1
+                        b_1x1_key = 'b' + str(param_count)
+                        self.params[b_1x1_key] = xp.zeros(out_channels)
+                        
+                        res_block = ResidualBlock(
+                            self.params[W1_key], self.params[b1_key],
+                            self.params[W2_key], self.params[b2_key],
+                            stride=stride, pad=pad,
+                            use_1x1_conv=True,
+                            W_1x1=self.params[W_1x1_key],
+                            b_1x1=self.params[b_1x1_key]
+                        )
+                    else:
+                        res_block = ResidualBlock(
+                            self.params[W1_key], self.params[b1_key],
+                            self.params[W2_key], self.params[b2_key],
+                            stride=stride, pad=pad,
+                            use_1x1_conv=False
+                        )
+                    
+                    layer_count['ResidualBlock'] += 1
+                    layer_ord = str(layer_count['ResidualBlock'])
+                    res_block_name = 'ResidualBlock'+layer_ord
+                    self.layers[res_block_name] = res_block
+                    
+                    # ResidualBlock のパラメータキーを記録
+                    res_param_keys = [W1_key, b1_key, W2_key, b2_key]
+                    if use_1x1_conv_flag:
+                        res_param_keys.extend([W_1x1_key, b_1x1_key])
+                    self.layer_params[res_block_name] = res_param_keys
+                    
+                    # 出力サイズを計算
+                    out_h = 1 + int((latest_dim[1] + 2*pad - filter_size) / stride)
+                    out_w = 1 + int((latest_dim[2] + 2*pad - filter_size) / stride)
+                    latest_dim = (out_channels, out_h, out_w)
 
         match last_layer:
             case 'Softmax':
@@ -203,29 +287,34 @@ class NN_Model:
 
         # 勾配の設定
         grads = {}
-        conv_param_count = 1
-        bn_param_count = 1
         
         for layer_name, layer in self.layers.items():
+            # ResidualBlock層の勾配
+            if layer_name.startswith('ResidualBlock') and hasattr(layer, 'get_grads'):
+                res_grads = layer.get_grads()
+                param_keys = self.layer_params[layer_name]
+                
+                # res_grads の順序は W1, b1, W2, b2, [W_1x1, b_1x1]
+                grad_keys = list(res_grads.keys())
+                for i, key in enumerate(grad_keys):
+                    grads[param_keys[i]] = res_grads[key]
+            
             # Convolution層の勾配
-            if layer_name.startswith('Conv') and hasattr(layer, 'dW'):
-                grads['W' + str(conv_param_count)] = layer.dW
-                grads['b' + str(conv_param_count)] = layer.db
-                conv_param_count += 1
+            elif layer_name.startswith('Conv') and hasattr(layer, 'dW'):
+                param_keys = self.layer_params[layer_name]
+                grads[param_keys[0]] = layer.dW
+                grads[param_keys[1]] = layer.db
             
             # BatchNormalization層の勾配
             elif layer_name.startswith('BatchNorm') and hasattr(layer, 'dgamma'):
-                grads['gamma' + str(bn_param_count)] = layer.dgamma
-                grads['beta' + str(bn_param_count)] = layer.dbeta
-                bn_param_count += 1
+                param_keys = self.layer_params[layer_name]
+                grads[param_keys[0]] = layer.dgamma
+                grads[param_keys[1]] = layer.dbeta
             
             # Affine層の勾配
             elif layer_name.startswith('Affine') and hasattr(layer, 'dW'):
-                affine_param_count = int(layer_name.replace('Affine', ''))
-                # Affineパラメータのカウント調整
-                total_conv = len([l for l in self.layers.keys() if l.startswith('Conv')])
-                param_index = total_conv + affine_param_count
-                grads['W' + str(param_index)] = layer.dW
-                grads['b' + str(param_index)] = layer.db
+                param_keys = self.layer_params[layer_name]
+                grads[param_keys[0]] = layer.dW
+                grads[param_keys[1]] = layer.db
 
         return grads
