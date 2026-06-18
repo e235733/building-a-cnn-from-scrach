@@ -266,7 +266,7 @@ class NN_Model:
         y = xp.argmax(y, axis=1)
         num_correct = xp.sum(y == t)
         
-        return num_correct / x.shape[0]
+        return float(num_correct) / x.shape[0]
 
     def gradient(self, x, t):
         """勾配を求める

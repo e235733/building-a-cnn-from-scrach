@@ -31,9 +31,37 @@ class Trainer:
         self.train_loss_list = []
         self.train_acc_list = []
         self.test_acc_list = []
+        
+        # 学習開始前（真っ新な状態）の精度を記録
+        self._evaluate(display_epoch=0)
+
+    def _evaluate(self, display_epoch):
+        # 評価モード設定
+        if hasattr(self.model, 'is_training'):
+            self.model.is_training = False
+            
+        x_train_sample, t_train_sample = self.x_train, self.t_train
+        x_test_sample, t_test_sample = self.x_test, self.t_test
+        if not self.evaluate_sample_num_per_epoch is None:
+            t = self.evaluate_sample_num_per_epoch
+            x_train_sample, t_train_sample = self.x_train[:t], self.t_train[:t]
+            x_test_sample, t_test_sample = self.x_test[:t], self.t_test[:t]
+            
+        train_acc = self.model.accuracy(x_train_sample, t_train_sample)
+        test_acc = self.model.accuracy(x_test_sample, t_test_sample)
+
+        if hasattr(train_acc, 'get'):
+            train_acc = train_acc.get()
+        if hasattr(test_acc, 'get'):
+            test_acc = test_acc.get()
+
+        self.train_acc_list.append(train_acc)
+        self.test_acc_list.append(test_acc)
+
+        if self.verbose: 
+            print(f"=== epoch: {display_epoch}, train acc: {train_acc:.4f}, test acc: {test_acc:.4f} ===")
 
     def train_step(self):
-
         batch_mask = xp.random.choice(self.train_size, self.batch_size)
         x_batch = self.x_train[batch_mask]
         t_batch = self.t_train[batch_mask]
@@ -50,48 +78,15 @@ class Trainer:
         
         loss = self.model.last_loss
         self.train_loss_list.append(loss)
-
-        # 評価モード設定
-        if hasattr(self.model, 'is_training'):
-            self.model.is_training = False
-
         
-        # 判定条件：
-        # 1. 最初 (current_iter == 0) -> epoch 0
-        # 2. 各エポックの終了時 ((current_iter + 1) % iter_per_epoch == 0) -> epoch 1, 2, ...
-        if self.current_iter % self.iter_per_epoch == 0 or (self.current_iter + 1) == self.max_iter:
-
-            # 表示用のエポック数
-            if self.current_iter == 0:
-                display_epoch = 0
-            else:
-                display_epoch = (self.current_iter + 1) // self.iter_per_epoch
-                # 最終ステップが中途半端な場合でも最大エポック数を超えないように
-                display_epoch = min(display_epoch, self.epochs)
-
-            x_train_sample, t_train_sample = self.x_train, self.t_train
-            x_test_sample, t_test_sample = self.x_test, self.t_test
-            if not self.evaluate_sample_num_per_epoch is None:
-                t = self.evaluate_sample_num_per_epoch
-                x_train_sample, t_train_sample = self.x_train[:t], self.t_train[:t]
-                x_test_sample, t_test_sample = self.x_test[:t], self.t_test[:t]
-                
-            train_acc = self.model.accuracy(x_train_sample, t_train_sample)
-            test_acc = self.model.accuracy(x_test_sample, t_test_sample)
-
-            if hasattr(train_acc, 'get'):
-                train_acc = train_acc.get()
-            if hasattr(test_acc, 'get'):
-                test_acc = test_acc.get()
-
-            # 重複して追加されないようにチェック（最終ステップがちょうどエポック境界の場合など）
-            # ただし、今回はシンプルに current_iter == 0 または エポック終了時 で判定
-            self.train_acc_list.append(train_acc)
-            self.test_acc_list.append(test_acc)
-
-            if self.verbose: print(f"=== epoch: {display_epoch}, train acc: {train_acc}, test acc: {test_acc} ===")
-            
         self.current_iter += 1
+
+        # 各エポックの終了時に評価
+        if self.current_iter % self.iter_per_epoch == 0 or self.current_iter == self.max_iter:
+            display_epoch = self.current_iter // self.iter_per_epoch
+            # 最終ステップが中途半端な場合でも最大エポック数を超えないように
+            display_epoch = min(display_epoch, self.epochs)
+            self._evaluate(display_epoch)
 
     def train(self):
         for i in range(self.max_iter):
