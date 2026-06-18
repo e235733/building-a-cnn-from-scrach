@@ -8,16 +8,21 @@ from collections import OrderedDict
 class NN_Model:
     def __init__(self, input_dim=(1, 28, 28), 
                  layer_config=[['Conv', 30, 5, 2, 1], ['Relu'], ['Pool', 2, 2, 2], ['Affine', 100], ['Relu'], ['Affine', 10]], 
-                 last_layer='Softmax', weight_init_type='he'):
+                 last_layer='Softmax', weight_init_type='he', use_batchnorm=False):
 
         self.params = {}
         self.layers = OrderedDict()
 
         latest_dim = input_dim
         param_count = 0
-        layer_count = {'Conv': 0, 'Pool': 0, 'Affine': 0, 'Relu': 0, 'LeakyRelu': 0}
+        layer_count = {'Conv': 0, 'Pool': 0, 'Affine': 0, 'Relu': 0, 'LeakyRelu': 0, 'Dropout': 0}
+        if use_batchnorm:
+            layer_count['BatchNorm'] = 0
         
-        for i, l in enumerate(layer_config):
+        self.is_training = False
+        self.use_batchnorm = use_batchnorm
+
+        for _, l in enumerate(layer_config):
             match l[0]:
                 case 'Conv':
                     filter_num = l[1]
@@ -44,7 +49,15 @@ class NN_Model:
                     out_h = 1 + int((latest_dim[1] + 2*filter_pad - filter_size) / filter_stride)
                     out_w = 1 + int((latest_dim[2] + 2*filter_pad - filter_size) / filter_stride)
                     latest_dim=(filter_num, out_h, out_w)
+                    
+                    if self.use_batchnorm:
+                        self.params['gamma'+param_ord] = xp.ones(filter_num)
+                        self.params['beta'+param_ord] = xp.zeros(filter_num)
 
+                        layer_count['BatchNorm'] += 1
+                        layer_ord = str(layer_count['BatchNorm'])
+                        self.layers['BatchNorm'+layer_ord] = BatchNormalization(self.params['gamma'+param_ord], self.params['beta'+param_ord])
+                
                 case 'Pool':
                     pool_h = l[1]
                     pool_w = l[2]
@@ -92,6 +105,11 @@ class NN_Model:
                     layer_ord = str(layer_count['LeakyRelu'])
                     self.layers['LeakyRelu'+layer_ord] = LeakyRelu()
 
+                case 'Dropout':
+                    layer_count['Dropout'] += 1
+                    layer_ord = str(layer_count['Dropout'])
+                    self.layers['Dropout'+layer_ord] = Dropout(0.5)
+
         match last_layer:
             case 'Softmax':
                 self.last_layer = SoftmaxWithLoss()
@@ -109,6 +127,14 @@ class NN_Model:
         except (ValueError, TypeError):
             return 0.01
 
+    def _forward(self, x):
+        for layer in self.layers.values():
+            if isinstance(layer, (BatchNormalization, Dropout)):
+                x = layer.forward(x, self.is_training)
+            else:
+                x = layer.forward(x)
+        return x
+
     def predict(self, x, batch_size=None):
         """順伝播による予測
         x: 入力データ
@@ -122,9 +148,7 @@ class NN_Model:
             for i in range(int(xp.ceil(x.shape[0] / batch_size))):
                 tx = x[i*batch_size:(i+1)*batch_size]
                 # 各バッチに対して順伝播
-                out = tx
-                for layer in self.layers.values():
-                    out = layer.forward(out)
+                out = self._forward(tx)
                 
                 if result is None:
                     # 出力形状の動的取得と初期化
@@ -132,9 +156,7 @@ class NN_Model:
                 result[i*batch_size:(i+1)*batch_size] = out
             return result
         else:
-            for layer in self.layers.values():
-                x = layer.forward(x)
-            return x
+            return self._forward(x)
 
     def loss(self, x, t):
         """損失関数を求める
@@ -142,6 +164,7 @@ class NN_Model:
         t: 正解ラベル
         """
         # 勾配計算に必要な中間状態を保存するため、バッチ分割せずに順伝播を行う
+        self.is_training = True
         y = self.predict(x, batch_size=None)
         return self.last_layer.forward(y, t)
 
@@ -151,6 +174,7 @@ class NN_Model:
         t: 正解ラベル
         batch_size: 正解率計算のバッチサイズ
         """
+        self.is_training = False
         if t.ndim != 1:
             t = xp.argmax(t, axis=1)
 
@@ -166,7 +190,7 @@ class NN_Model:
         t : 教師ラベル
         """
         # forward
-        self.loss(x, t)
+        self.last_loss = self.loss(x, t)
 
         # backward
         dout = 1
@@ -177,13 +201,31 @@ class NN_Model:
         for layer in layers:
             dout = layer.backward(dout)
 
-        # 設定
+        # 勾配の設定
         grads = {}
-        param_count = 1
-        for layer in self.layers.values():
-            if hasattr(layer, 'dW'):
-                grads['W' + str(param_count)] = layer.dW
-                grads['b' + str(param_count)] = layer.db
-                param_count += 1
+        conv_param_count = 1
+        bn_param_count = 1
+        
+        for layer_name, layer in self.layers.items():
+            # Convolution層の勾配
+            if layer_name.startswith('Conv') and hasattr(layer, 'dW'):
+                grads['W' + str(conv_param_count)] = layer.dW
+                grads['b' + str(conv_param_count)] = layer.db
+                conv_param_count += 1
+            
+            # BatchNormalization層の勾配
+            elif layer_name.startswith('BatchNorm') and hasattr(layer, 'dgamma'):
+                grads['gamma' + str(bn_param_count)] = layer.dgamma
+                grads['beta' + str(bn_param_count)] = layer.dbeta
+                bn_param_count += 1
+            
+            # Affine層の勾配
+            elif layer_name.startswith('Affine') and hasattr(layer, 'dW'):
+                affine_param_count = int(layer_name.replace('Affine', ''))
+                # Affineパラメータのカウント調整
+                total_conv = len([l for l in self.layers.keys() if l.startswith('Conv')])
+                param_index = total_conv + affine_param_count
+                grads['W' + str(param_index)] = layer.dW
+                grads['b' + str(param_index)] = layer.db
 
         return grads
