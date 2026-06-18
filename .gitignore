@@ -9,3 +9,10 @@ datasets/
 
 .vscode/
 *.npz
+
+# Generated plots
+*.png
+
+# Dataset directories
+cifar-10-batches-py/
+mnist.npz

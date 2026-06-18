@@ -255,6 +255,18 @@ class Plotter:
                     ax_img.imshow(X_test_cpu[idx].reshape(img_size, img_size), cmap='gray')
                     ax_img.set_title(f"T:{Y_true[idx]} -> P:{Y_pred[idx]}", color='red', fontsize=10)
                     ax_img.axis('off')
+            elif self.input_dim == 3072:
+                num_show = min(9, len(error_indices))
+                for i in range(num_show):
+                    idx = error_indices[i]
+                    row = i // 3
+                    col = 3 + (i % 3)
+                    ax_img = fig_eval.add_subplot(gs[row, col])
+                    # CIFAR-10: (3, 32, 32) -> (32, 32, 3) for imshow
+                    img = X_test_cpu[idx].reshape(3, 32, 32).transpose(1, 2, 0)
+                    ax_img.imshow(img)
+                    ax_img.set_title(f"T:{Y_true[idx]} -> P:{Y_pred[idx]}", color='red', fontsize=10)
+                    ax_img.axis('off')
             elif self.input_dim == 2:
                 ax_err = fig_eval.add_subplot(gs[:, 3:])
                 ax_err.scatter(X_test_cpu[:, 0], X_test_cpu[:, 1], c=Y_true, cmap='tab10', alpha=0.2)
