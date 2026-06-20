@@ -9,7 +9,7 @@ def main():
     epochs = 1
     mini_batch_size = 128
     optimizer = 'Momentum'
-    optimizer_param = {'lr': 0.01}
+    optimizer_param = {'lr': 0.05, 'weight_decay': 1e-5}
     evaluate_sample_num_per_epoch = 10000
     
     # --- データの準備 ---
@@ -23,16 +23,18 @@ def main():
 
     # --- モデルの構築 ---
     print("Initializing CNN...")
-    model = NN_Model(layer_config=[['Conv', 32, 5, 2, 1], ['LeakyRelu'],
-                                   ['Conv', 32, 5, 2, 1], ['LeakyRelu'],
+    model = NN_Model(layer_config=[['Conv', 16, 3, 1, 1], 
+                                   ['ResidualBlock', 16, 3, 1, 1],
+                                   ['ResidualBlock', 16, 3, 1, 1],
                                    ['Pool', 2, 2, 2],
-                                   ['Conv', 64, 3, 1, 1], ['LeakyRelu'],
-                                   ['Conv', 64, 3, 1, 1], ['LeakyRelu'],
-                                   ['Pool', 2, 2, 2],
-                                   ['Conv', 128, 3, 0, 1], ['LeakyRelu'],
-                                   ['Conv', 128, 3, 0, 1], ['LeakyRelu'],
+                                   ['ResidualBlock', 32, 3, 1, 1],
+                                   ['ResidualBlock', 32, 3, 1, 1],
+                                   ['Pool', 2, 2, 2], ['LeakyRelu'],
+                                   ['Conv', 64, 3, 0, 1], ['LeakyRelu'],
+                                   ['Conv', 64, 3, 0, 1], ['LeakyRelu'],
+                                   ['Dropout', 0.5],
                                    ['Affine', 10]],
-                                   use_batchnorm=True)
+                                   use_batchnorm=False)
 
     # --- トレーナーの準備 ---
     trainer = Trainer(

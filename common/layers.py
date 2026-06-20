@@ -212,7 +212,7 @@ class Pooling:
         return dx
 
 class BatchNormalization:
-    def __init__(self, gamma, beta, momentum=0.9, eps=1e-7):
+    def __init__(self, gamma, beta, momentum=0.9, eps=1e-5):
         self.gamma = gamma
         self.beta = beta
         self.momentum = momentum
@@ -248,8 +248,8 @@ class BatchNormalization:
         # 初回のみ running_mean, running_var を初期化
         if self.running_mean is None:
             N, D = x.shape
-            self.running_mean = xp.zeros(D)
-            self.running_var = xp.ones(D)
+            self.running_mean = x.mean(axis=0)
+            self.running_var = x.var(axis=0)
 
         if is_training:
             # バッチ統計量の計算
@@ -330,57 +330,68 @@ class ResidualBlock:
     """Pre-activation残差ブロック(スキップ接続を含む)
     
     Pre-activationアーキテクチャを採用：
-    ReLU → Conv → ReLU → Conv → (+) → 出力
+    BatchNorm → ReLU → Conv → BatchNorm → ReLU → Conv → (+) → 出力
     
     従来のPost-activationより勾配が安定し、より深いネットワークに対応。
     チャネル数やサイズが異なる場合は1x1 Convで調整する。
     """
-    def __init__(self, W1, b1, W2, b2, stride=1, pad=1, use_1x1_conv=False, W_1x1=None, b_1x1=None):
+    def __init__(self, W1, b1, W2, b2, gamma1, beta1, gamma2, beta2, stride=1, pad=1,
+                 use_1x1_conv=False, W_1x1=None, b_1x1=None,
+                 gamma_1x1=None, beta_1x1=None):
         """
         Args:
+            gamma1, beta1: 第1のBatchNorm層のパラメータ
+            gamma2, beta2: 第2のBatchNorm層のパラメータ
             W1, b1: 第1の畳み込み層の重みとバイアス
             W2, b2: 第2の畳み込み層の重みとバイアス
             stride: ストライド (第1層に適用)
             pad: パディング
             use_1x1_conv: ショートカット接続用に1x1 Convを使うかどうか
             W_1x1, b_1x1: ショートカット用の1x1 Conv の重みとバイアス
+            gamma_1x1, beta_1x1: ショートカット用のBatchNorm層のパラメータ
         """
-        # Pre-activationではReLUが先に来る
-        self.relu_input = Relu()
-        
-        self.conv1 = Convolution(W1, b1, stride=stride, pad=pad)
+        # Pre-activationではReluが先に来る
+        self.bn1 = BatchNormalization(gamma1, beta1)
         self.relu1 = Relu()
+        self.conv1 = Convolution(W1, b1, stride=stride, pad=pad)
+        self.bn2 = BatchNormalization(gamma2, beta2)
+        self.relu2 = Relu()
         self.conv2 = Convolution(W2, b2, stride=1, pad=pad)
         
         self.use_1x1_conv = use_1x1_conv
         if use_1x1_conv:
+            self.bn_1x1 = BatchNormalization(gamma_1x1, beta_1x1)
             self.conv_1x1 = Convolution(W_1x1, b_1x1, stride=stride, pad=0)
         
         self.x = None
         self.out = None
         
-    def forward(self, x):
+    def forward(self, x, is_training=True):
         """順伝播(Pre-activation)
         
-        流れ: ReLU → Conv1 → ReLU → Conv2 → (+) 
+        流れ: BatchNorm → ReLU → Conv1 → BatchNorm → ReLU → Conv2 → (+) 
         
         Args:
             x: 入力データ (N, C, H, W)
+            is_training: 学習モードかどうか
             
         Returns:
             出力データ (N, C', H', W')
         """
         self.x = x
         
-        # メイン路: ReLU → Conv → ReLU → Conv
-        h = self.relu_input.forward(x)
-        h = self.conv1.forward(h)
+        # メイン路: BatchNorm → ReLU → Conv → BatchNorm → ReLU → Conv
+        h = self.bn1.forward(x, is_training)
         h = self.relu1.forward(h)
+        h = self.conv1.forward(h)
+        h = self.bn2.forward(h, is_training)
+        h = self.relu2.forward(h)
         h = self.conv2.forward(h)
         
         # ショートカット接続
         if self.use_1x1_conv:
-            shortcut = self.conv_1x1.forward(x)
+            shortcut = self.bn_1x1.forward(x, is_training)
+            shortcut = self.conv_1x1.forward(shortcut)
         else:
             shortcut = x
         
@@ -406,13 +417,16 @@ class ResidualBlock:
         
         # メイン路の逆伝播
         dh = self.conv2.backward(dh)
-        dh = self.relu1.backward(dh)
+        dh = self.relu2.backward(dh)
+        dh = self.bn2.backward(dh)
         dh = self.conv1.backward(dh)
-        dh = self.relu_input.backward(dh)
-        
+        dh = self.relu1.backward(dh)
+        dh = self.bn1.backward(dh)
+
         # ショートカット接続の逆伝播
         if self.use_1x1_conv:
             dshortcut = self.conv_1x1.backward(dshortcut)
+            dshortcut = self.bn_1x1.backward(dshortcut)
         
         # 入力層への勾配
         dx = dh + dshortcut
@@ -426,10 +440,16 @@ class ResidualBlock:
         params['b1'] = self.conv1.b
         params['W2'] = self.conv2.W
         params['b2'] = self.conv2.b
+        params['gamma1'] = self.bn1.gamma
+        params['beta1'] = self.bn1.beta
+        params['gamma2'] = self.bn2.gamma
+        params['beta2'] = self.bn2.beta
         
         if self.use_1x1_conv:
             params['W_1x1'] = self.conv_1x1.W
             params['b_1x1'] = self.conv_1x1.b
+            params['gamma_1x1'] = self.bn_1x1.gamma
+            params['beta_1x1'] = self.bn_1x1.beta
             
         return params
     
@@ -440,9 +460,15 @@ class ResidualBlock:
         grads['b1'] = self.conv1.db
         grads['W2'] = self.conv2.dW
         grads['b2'] = self.conv2.db
-        
+        grads['gamma1'] = self.bn1.dgamma
+        grads['beta1'] = self.bn1.dbeta
+        grads['gamma2'] = self.bn2.dgamma
+        grads['beta2'] = self.bn2.dbeta
+
         if self.use_1x1_conv:
             grads['W_1x1'] = self.conv_1x1.dW
             grads['b_1x1'] = self.conv_1x1.db
-            
+            grads['gamma_1x1'] = self.bn_1x1.dgamma
+            grads['beta_1x1'] = self.bn_1x1.dbeta
+
         return grads
