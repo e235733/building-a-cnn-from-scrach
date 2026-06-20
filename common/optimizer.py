@@ -3,19 +3,23 @@ GPU_ENABLE = config.GPU_ENABLE
 xp = config.get_xp()
 
 class SGD:
-    def __init__(self, lr=0.01):
+    def __init__(self, lr=0.01, weight_decay=0):
         self.lr = lr
-        
+        self.weight_decay = weight_decay
+
     def update(self, params, grads):
         for key in params.keys():
             if key in grads:
+                if self.weight_decay > 0 and 'W' in key:
+                    grads[key] += self.weight_decay * params[key]
                 params[key] -= self.lr * grads[key]
 
 
 class Momentum:
-    def __init__(self, lr=0.01, momentum=0.9):
+    def __init__(self, lr=0.01, momentum=0.9, weight_decay=0):
         self.lr = lr
         self.momentum = momentum
+        self.weight_decay = weight_decay
         self.v = None
         
     def update(self, params, grads):
@@ -26,6 +30,8 @@ class Momentum:
                 
         for key in params.keys():
             if key in grads:
+                if self.weight_decay > 0 and 'W' in key:
+                    grads[key] += self.weight_decay * params[key]
                 self.v[key] = self.momentum * self.v[key] - self.lr * grads[key]
                 params[key] += self.v[key]
 

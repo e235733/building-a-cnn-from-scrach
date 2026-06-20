@@ -113,9 +113,10 @@ class NN_Model:
                     self.layers['LeakyRelu'+layer_ord] = LeakyRelu()
 
                 case 'Dropout':
+                    dropout_ratio = l[1] if len(l) > 1 else 0.5
                     layer_count['Dropout'] += 1
                     layer_ord = str(layer_count['Dropout'])
-                    self.layers['Dropout'+layer_ord] = Dropout(0.5)
+                    self.layers['Dropout'+layer_ord] = Dropout(dropout_ratio)
 
                 case 'ResidualBlock':
                     # layer_config: ['ResidualBlock', out_channels, filter_size, stride, pad]
@@ -127,53 +128,83 @@ class NN_Model:
                     use_1x1_conv_flag = l[5] if len(l) > 5 else (stride != 1 or out_channels != latest_dim[0])
                     
                     in_channels = latest_dim[0]
-                    
+
                     # ノード数から初期値の標準偏差を計算
                     node_num = in_channels * filter_size * filter_size
                     weight_init_std = self._get_weight_init_std(weight_init_type, node_num)
                     
                     # メイン路の重み
                     param_count += 1
+                    gamma1_key = 'gamma' + str(param_count)
+                    self.params[gamma1_key] = xp.ones(in_channels)
+
+                    param_count += 1
+                    beta1_key = 'beta' + str(param_count)
+                    self.params[beta1_key] = xp.zeros(in_channels)
+
+                    param_count += 1
                     W1_key = 'W' + str(param_count)
-                    self.params[W1_key] = weight_init_std * \
-                        xp.random.randn(out_channels, in_channels, filter_size, filter_size)
+                    data_shape = (out_channels, in_channels, filter_size, filter_size)
+                    self.params[W1_key] = xp.random.randn(*data_shape) * weight_init_std
                     
                     param_count += 1
                     b1_key = 'b' + str(param_count)
                     self.params[b1_key] = xp.zeros(out_channels)
+
+                    param_count += 1
+                    gamma2_key = 'gamma' + str(param_count)
+                    self.params[gamma2_key] = xp.ones(out_channels)
+
+                    param_count += 1
+                    beta2_key = 'beta' + str(param_count)
+                    self.params[beta2_key] = xp.zeros(out_channels)
                     
                     param_count += 1
                     W2_key = 'W' + str(param_count)
-                    self.params[W2_key] = weight_init_std * \
-                        xp.random.randn(out_channels, out_channels, filter_size, filter_size)
+                    data_shape = (out_channels, out_channels, filter_size, filter_size)
+                    self.params[W2_key] = xp.random.randn(*data_shape) * weight_init_std
                     
                     param_count += 1
                     b2_key = 'b' + str(param_count)
                     self.params[b2_key] = xp.zeros(out_channels)
-                    
+
                     # 1x1 Conv の重み（必要な場合）
                     if use_1x1_conv_flag:
                         param_count += 1
+                        gamma_1x1_key = 'gamma' + str(param_count)
+                        self.params[gamma_1x1_key] = xp.ones(in_channels)
+
+                        param_count += 1
+                        beta_1x1_key = 'beta' + str(param_count)
+                        self.params[beta_1x1_key] = xp.zeros(in_channels)
+
+                        param_count += 1
                         W_1x1_key = 'W' + str(param_count)
-                        self.params[W_1x1_key] = weight_init_std * \
-                            xp.random.randn(out_channels, in_channels, 1, 1)
+                        data_shape = (out_channels, in_channels, 1, 1)
+                        self.params[W_1x1_key] =  xp.random.randn(*data_shape) * weight_init_std
                         
                         param_count += 1
                         b_1x1_key = 'b' + str(param_count)
                         self.params[b_1x1_key] = xp.zeros(out_channels)
-                        
+
                         res_block = ResidualBlock(
                             self.params[W1_key], self.params[b1_key],
                             self.params[W2_key], self.params[b2_key],
+                            self.params[gamma1_key], self.params[beta1_key],
+                            self.params[gamma2_key], self.params[beta2_key],
                             stride=stride, pad=pad,
                             use_1x1_conv=True,
                             W_1x1=self.params[W_1x1_key],
-                            b_1x1=self.params[b_1x1_key]
+                            b_1x1=self.params[b_1x1_key],
+                            gamma_1x1=self.params[gamma_1x1_key],
+                            beta_1x1=self.params[beta_1x1_key]
                         )
                     else:
                         res_block = ResidualBlock(
                             self.params[W1_key], self.params[b1_key],
                             self.params[W2_key], self.params[b2_key],
+                            self.params[gamma1_key], self.params[beta1_key],
+                            self.params[gamma2_key], self.params[beta2_key],
                             stride=stride, pad=pad,
                             use_1x1_conv=False
                         )
@@ -184,9 +215,9 @@ class NN_Model:
                     self.layers[res_block_name] = res_block
                     
                     # ResidualBlock のパラメータキーを記録
-                    res_param_keys = [W1_key, b1_key, W2_key, b2_key]
+                    res_param_keys = [W1_key, b1_key, W2_key, b2_key, gamma1_key, beta1_key, gamma2_key, beta2_key]
                     if use_1x1_conv_flag:
-                        res_param_keys.extend([W_1x1_key, b_1x1_key])
+                        res_param_keys.extend([W_1x1_key, b_1x1_key, gamma_1x1_key, beta_1x1_key])
                     self.layer_params[res_block_name] = res_param_keys
                     
                     # 出力サイズを計算
