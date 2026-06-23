@@ -8,7 +8,7 @@ from collections import OrderedDict
 class NN_Model:
     def __init__(self, input_dim=(1, 28, 28), 
                  layer_config=[['Conv', 30, 5, 2, 1], ['Relu'], ['Pool', 2, 2, 2], ['Affine', 100], ['Relu'], ['Affine', 10]], 
-                 last_layer='Softmax', weight_init_type='he', use_batchnorm=False):
+                 last_layer='Softmax', weight_init_type='he'):
 
         self.params = {}
         self.layers = OrderedDict()
@@ -16,12 +16,9 @@ class NN_Model:
 
         latest_dim = input_dim
         param_count = 0
-        layer_count = {'Conv': 0, 'Pool': 0, 'Affine': 0, 'Relu': 0, 'LeakyRelu': 0, 'Dropout': 0, 'ResidualBlock': 0}
-        if use_batchnorm:
-            layer_count['BatchNorm'] = 0
+        layer_count = {'Conv': 0, 'Pool': 0,'Relu': 0, 'LeakyRelu': 0, 'Affine': 0,'BatchNorm': 0}
         
         self.is_training = False
-        self.use_batchnorm = use_batchnorm
 
         for _, l in enumerate(layer_config):
             match l[0]:
@@ -53,15 +50,18 @@ class NN_Model:
                     out_w = 1 + int((latest_dim[2] + 2*filter_pad - filter_size) / filter_stride)
                     latest_dim=(filter_num, out_h, out_w)
                     
-                    if self.use_batchnorm:
-                        self.params['gamma'+param_ord] = xp.ones(filter_num)
-                        self.params['beta'+param_ord] = xp.zeros(filter_num)
+                case 'BatchNorm':
+                    param_count += 1
+                    param_ord = str(param_count)
+                    filter_num = latest_dim[0]
+                    self.params['gamma'+param_ord] = xp.ones(filter_num)
+                    self.params['beta'+param_ord] = xp.zeros(filter_num)
 
-                        layer_count['BatchNorm'] += 1
-                        layer_ord = str(layer_count['BatchNorm'])
-                        bn_layer_name = 'BatchNorm'+layer_ord
-                        self.layers[bn_layer_name] = BatchNormalization(self.params['gamma'+param_ord], self.params['beta'+param_ord])
-                        self.layer_params[bn_layer_name] = ['gamma'+param_ord, 'beta'+param_ord]
+                    layer_count['BatchNorm'] += 1
+                    layer_ord = str(layer_count['BatchNorm'])
+                    bn_layer_name = 'BatchNorm'+layer_ord
+                    self.layers[bn_layer_name] = BatchNormalization(self.params['gamma'+param_ord], self.params['beta'+param_ord])
+                    self.layer_params[bn_layer_name] = ['gamma'+param_ord, 'beta'+param_ord]
                 
                 case 'Pool':
                     pool_h = l[1]
@@ -75,6 +75,15 @@ class NN_Model:
                     out_h = int(1 + (latest_dim[1] - pool_h) / pool_stride)
                     out_w = int(1 + (latest_dim[2] - pool_w) / pool_stride)
                     latest_dim = (latest_dim[0], out_h, out_w)
+
+                case 'GAP':
+                    if 'GAP' not in layer_count:
+                        layer_count['GAP'] = 1
+                    else:
+                        layer_count['GAP'] += 1
+                    layer_ord = str(layer_count['GAP'])
+                    self.layers['GAP'+layer_ord] = GlobalAveragePooling()
+                    latest_dim = (latest_dim[0], 1, 1)
 
                 case 'Affine':
                     input_size = None
@@ -114,7 +123,10 @@ class NN_Model:
 
                 case 'Dropout':
                     dropout_ratio = l[1] if len(l) > 1 else 0.5
-                    layer_count['Dropout'] += 1
+                    if 'Dropout' not in layer_count:
+                        layer_count['Dropout'] = 1
+                    else:
+                        layer_count['Dropout'] += 1
                     layer_ord = str(layer_count['Dropout'])
                     self.layers['Dropout'+layer_ord] = Dropout(dropout_ratio)
 
@@ -208,8 +220,11 @@ class NN_Model:
                             stride=stride, pad=pad,
                             use_1x1_conv=False
                         )
-                    
-                    layer_count['ResidualBlock'] += 1
+
+                    if 'ResidualBlock' not in layer_count:
+                        layer_count['ResidualBlock'] = 1
+                    else:
+                        layer_count['ResidualBlock'] += 1
                     layer_ord = str(layer_count['ResidualBlock'])
                     res_block_name = 'ResidualBlock'+layer_ord
                     self.layers[res_block_name] = res_block
