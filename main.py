@@ -1,13 +1,14 @@
 from mnist_dataset import MnistDataset
+from cifar10_dataset import Cifar10Dataset
 from nn import NN_Model
 from common.trainer import Trainer
 from plotter import Plotter
 
 def main():
     # --- ハイパーパラメータの設定 ---
-    n_samples = 1000
-    epochs = 1
-    mini_batch_size = 128
+    n_samples = 1000  # Noneの場合は全データを使用
+    epochs = 10
+    mini_batch_size = 100
     optimizer = 'Momentum'
     optimizer_param = {'lr': 0.05, 'weight_decay': 1e-5}
     evaluate_sample_num_per_epoch = 10000
@@ -23,18 +24,21 @@ def main():
 
     # --- モデルの構築 ---
     print("Initializing CNN...")
-    model = NN_Model(layer_config=[['Conv', 16, 3, 1, 1], 
-                                   ['ResidualBlock', 16, 3, 1, 1],
+    model = NN_Model(layer_config=[['ResidualBlock', 16, 3, 1, 1],
                                    ['ResidualBlock', 16, 3, 1, 1],
                                    ['Pool', 2, 2, 2],
                                    ['ResidualBlock', 32, 3, 1, 1],
                                    ['ResidualBlock', 32, 3, 1, 1],
-                                   ['Pool', 2, 2, 2], ['LeakyRelu'],
-                                   ['Conv', 64, 3, 0, 1], ['LeakyRelu'],
-                                   ['Conv', 64, 3, 0, 1], ['LeakyRelu'],
-                                   ['Dropout', 0.5],
-                                   ['Affine', 10]],
-                                   use_batchnorm=False)
+                                   ['Pool', 2, 2, 2],
+                                   ['ResidualBlock', 64, 3, 1, 1],
+                                   ['ResidualBlock', 64, 3, 1, 1],
+                                   ['BatchNorm'], ['Relu'],
+                                   ['Conv', 64, 3, 0, 1],
+                                   ['BatchNorm'], ['Relu'],
+                                   ['Conv', 64, 3, 0, 1],
+                                   ['BatchNorm'], ['Relu'],
+                                   ['GAP'],
+                                   ['Affine', 10]],)
 
     # --- トレーナーの準備 ---
     trainer = Trainer(

@@ -7,7 +7,7 @@ except ImportError:
     cp = None
     CUPY_AVAILABLE = False
 
-GPU_ENABLE = True
+GPU_ENABLE = False
 
 def get_xp():
     if GPU_ENABLE and CUPY_AVAILABLE:

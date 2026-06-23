@@ -211,6 +211,25 @@ class Pooling:
         
         return dx
 
+class GlobalAveragePooling:
+    def __init__(self):
+        self.x = None
+        self.out = None
+
+    def forward(self, x):
+        self.x = x
+        # N, C, H, W = x.shape
+        out = xp.mean(x, axis=(2, 3))  # (N, C)
+        self.out = out
+        return out
+
+    def backward(self, dout):
+        N, C = dout.shape
+        H, W = self.x.shape[2], self.x.shape[3]
+        dx = dout[:, :, None, None] / (H * W)  # (N, C, 1, 1)
+        dx = xp.tile(dx, (1, 1, H, W))  # (N, C, H, W)
+        return dx
+
 class BatchNormalization:
     def __init__(self, gamma, beta, momentum=0.9, eps=1e-5):
         self.gamma = gamma
