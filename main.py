@@ -6,11 +6,11 @@ from plotter import Plotter
 
 def main():
     # --- ハイパーパラメータの設定 ---
-    n_samples = 1000  # Noneの場合は全データを使用
+    n_samples = 200  # Noneの場合は全データを使用
     epochs = 10
-    mini_batch_size = 100
+    mini_batch_size = 128
     optimizer = 'Momentum'
-    optimizer_param = {'lr': 0.05, 'weight_decay': 1e-5}
+    optimizer_param = {'lr': 0.1, 'weight_decay': 1e-5}
     evaluate_sample_num_per_epoch = 10000
     
     # --- データの準備 ---
@@ -38,7 +38,7 @@ def main():
                                    ['Conv', 64, 3, 0, 1],
                                    ['BatchNorm'], ['Relu'],
                                    ['GAP'],
-                                   ['Affine', 10]],)
+                                   ['Affine', 10]])
 
     # --- トレーナーの準備 ---
     trainer = Trainer(
@@ -48,7 +48,8 @@ def main():
         optimizer=optimizer, 
         optimizer_param=optimizer_param,
         evaluate_sample_num_per_epoch=evaluate_sample_num_per_epoch,
-        verbose=True
+        verbose=True,
+        log_interval=50
     )
 
     # --- プロッターの準備 ---

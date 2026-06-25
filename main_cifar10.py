@@ -48,7 +48,8 @@ def main():
         optimizer=optimizer, 
         optimizer_param=optimizer_param,
         evaluate_sample_num_per_epoch=evaluate_sample_num_per_epoch,
-        verbose=True
+        verbose=True,
+        log_interval=20
     )
 
     # --- プロッターの準備 ---
