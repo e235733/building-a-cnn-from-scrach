@@ -1,6 +1,7 @@
 from mnist_dataset import MnistDataset
 from cifar10_dataset import Cifar10Dataset
 from nn import NN_Model
+from common.layer_spec import *
 from common.trainer import Trainer
 from plotter import Plotter
 
@@ -24,21 +25,21 @@ def main():
 
     # --- モデルの構築 ---
     print("Initializing CNN...")
-    model = NN_Model(layer_config=[['ResidualBlock', 16, 3, 1, 1],
-                                   ['ResidualBlock', 16, 3, 1, 1],
-                                   ['Pool', 2, 2, 2],
-                                   ['ResidualBlock', 32, 3, 1, 1],
-                                   ['ResidualBlock', 32, 3, 1, 1],
-                                   ['Pool', 2, 2, 2],
-                                   ['ResidualBlock', 64, 3, 1, 1],
-                                   ['ResidualBlock', 64, 3, 1, 1],
-                                   ['BatchNorm'], ['Relu'],
-                                   ['Conv', 64, 3, 0, 1],
-                                   ['BatchNorm'], ['Relu'],
-                                   ['Conv', 64, 3, 0, 1],
-                                   ['BatchNorm'], ['Relu'],
-                                   ['GAP'],
-                                   ['Affine', 10]])
+    model = NN_Model(layer_config=[ResidualBlock(16, 3),
+                                   ResidualBlock(16, 3),
+                                   Pool(),
+                                   ResidualBlock(32, 3),
+                                   ResidualBlock(32, 3),
+                                   Pool(),
+                                   ResidualBlock(64, 3),
+                                   ResidualBlock(64, 3),
+                                   BatchNorm(), Relu(),
+                                   Conv(64, 3, 1, 0),
+                                   BatchNorm(), Relu(),
+                                   Conv(64, 3, 1, 0),
+                                   BatchNorm(), Relu(),
+                                   GAP(),
+                                   Affine(10)])
 
     # --- トレーナーの準備 ---
     trainer = Trainer(

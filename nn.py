@@ -2,12 +2,13 @@ from common import config
 GPU_ENABLE = config.GPU_ENABLE
 xp = config.get_xp()
 from common.layers import *
+import common.layer_spec as layer_spec
 from collections import OrderedDict
 
 # ネットワークを設計可能なモデル
 class NN_Model:
     def __init__(self, input_dim=(1, 28, 28), 
-                 layer_config=[['Conv', 30, 5, 2, 1], ['Relu'], ['Pool', 2, 2, 2], ['Affine', 100], ['Relu'], ['Affine', 10]], 
+                 layer_config=[layer_spec.Conv(16), layer_spec.Relu(), layer_spec.Pool(), layer_spec.Affine(10)],
                  last_layer='Softmax', weight_init_type='he'):
 
         self.params = {}
@@ -19,14 +20,15 @@ class NN_Model:
         layer_count = {'Conv': 0, 'Pool': 0,'Relu': 0, 'LeakyRelu': 0, 'Affine': 0,'BatchNorm': 0}
         
         self.is_training = False
+        self.layer_config = self._normalize_layer_config(layer_config)
 
-        for _, l in enumerate(layer_config):
-            match l[0]:
+        for layer_type, params in self.layer_config:
+            match layer_type:
                 case 'Conv':
-                    filter_num = l[1]
-                    filter_size = l[2]
-                    filter_pad  = l[3]
-                    filter_stride = l[4]
+                    filter_num = params['out_channels']
+                    filter_size = params['filter_size']
+                    filter_pad  = params['pad']
+                    filter_stride = params['stride']
 
                     # ノード数から初期値の標準偏差を計算
                     node_num = latest_dim[0] * filter_size * filter_size
@@ -64,9 +66,9 @@ class NN_Model:
                     self.layer_params[bn_layer_name] = ['gamma'+param_ord, 'beta'+param_ord]
                 
                 case 'Pool':
-                    pool_h = l[1]
-                    pool_w = l[2]
-                    pool_stride = l[3]
+                    pool_h = params['pool_h']
+                    pool_w = params['pool_w']
+                    pool_stride = params['stride']
 
                     layer_count['Pool'] += 1
                     layer_ord = str(layer_count['Pool'])
@@ -91,7 +93,7 @@ class NN_Model:
                         input_size = latest_dim[0] * latest_dim[1] * latest_dim[2]
                     elif (len(latest_dim) == 1):
                         input_size = latest_dim[0]
-                    output_size = l[1]
+                    output_size = params['output_size']
 
                     # ノード数から初期値の標準偏差を計算
                     weight_init_std = self._get_weight_init_std(weight_init_type, input_size)
@@ -122,7 +124,7 @@ class NN_Model:
                     self.layers['LeakyRelu'+layer_ord] = LeakyRelu()
 
                 case 'Dropout':
-                    dropout_ratio = l[1] if len(l) > 1 else 0.5
+                    dropout_ratio = params['dropout_ratio']
                     if 'Dropout' not in layer_count:
                         layer_count['Dropout'] = 1
                     else:
@@ -131,15 +133,16 @@ class NN_Model:
                     self.layers['Dropout'+layer_ord] = Dropout(dropout_ratio)
 
                 case 'ResidualBlock':
-                    # layer_config: ['ResidualBlock', out_channels, filter_size, stride, pad]
-                    # または: ['ResidualBlock', out_channels, filter_size, stride, pad, use_1x1_conv]
-                    out_channels = l[1]
-                    filter_size = l[2]
-                    stride = l[3] if len(l) > 3 else 1
-                    pad = l[4] if len(l) > 4 else 1
-                    use_1x1_conv_flag = l[5] if len(l) > 5 else (stride != 1 or out_channels != latest_dim[0])
+                    out_channels = params['out_channels']
+                    filter_size = params['filter_size']
+                    stride = params['stride']
+                    pad = params['pad']
+                    use_1x1_conv_flag = params.get('use_1x1_conv', None)
+                    survival_prob = params.get('survival_prob', 1.0)
                     
                     in_channels = latest_dim[0]
+                    if use_1x1_conv_flag is None:
+                        use_1x1_conv_flag = (stride != 1 or out_channels != in_channels)
 
                     # ノード数から初期値の標準偏差を計算
                     node_num = in_channels * filter_size * filter_size
@@ -205,6 +208,7 @@ class NN_Model:
                             self.params[gamma1_key], self.params[beta1_key],
                             self.params[gamma2_key], self.params[beta2_key],
                             stride=stride, pad=pad,
+                            survival_prob=survival_prob,
                             use_1x1_conv=True,
                             W_1x1=self.params[W_1x1_key],
                             b_1x1=self.params[b_1x1_key],
@@ -218,7 +222,8 @@ class NN_Model:
                             self.params[gamma1_key], self.params[beta1_key],
                             self.params[gamma2_key], self.params[beta2_key],
                             stride=stride, pad=pad,
-                            use_1x1_conv=False
+                            use_1x1_conv=False,
+                            survival_prob=survival_prob
                         )
 
                     if 'ResidualBlock' not in layer_count:
@@ -256,6 +261,15 @@ class NN_Model:
             return float(weight_init_type)
         except (ValueError, TypeError):
             return 0.01
+
+    def _normalize_layer_config(self, config):
+        normalized = []
+        for layer in config:
+            if isinstance(layer, layer_spec.LayerSpec):
+                normalized.append((layer.type, layer.as_dict()))
+            else:
+                raise ValueError(f'Unsupported layer_config item: {layer}')
+        return normalized
 
     def _forward(self, x):
         for layer in self.layers.values():
