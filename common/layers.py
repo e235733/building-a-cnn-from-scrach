@@ -354,9 +354,9 @@ class ResidualBlock:
     従来のPost-activationより勾配が安定し、より深いネットワークに対応。
     チャネル数やサイズが異なる場合は1x1 Convで調整する。
     """
-    def __init__(self, W1, b1, W2, b2, gamma1=None, beta1=None, gamma2=None, beta2=None, stride=1, pad=1,
-                 use_1x1_conv=False, W_1x1=None, b_1x1=None,
-                 gamma_1x1=None, beta_1x1=None, survival_prob=1.0):
+    def __init__(self, W1, b1, W2, b2, gamma1=None, beta1=None, gamma2=None, beta2=None,
+                 stride=1, pad=1, survival_prob=1.0, use_1x1_conv=False,
+                 W_1x1=None, b_1x1=None, gamma_1x1=None, beta_1x1=None):
         """
         Args:
             gamma1, beta1: 第1のBatchNorm層のパラメータ
@@ -365,12 +365,12 @@ class ResidualBlock:
             W2, b2: 第2の畳み込み層の重みとバイアス
             stride: ストライド (第1層に適用)
             pad: パディング
+            survival_prob: 変換内容を後ろの層に伝える確率（確率的深度）
             use_1x1_conv: ショートカット接続用に1x1 Convを使うかどうか
             W_1x1, b_1x1: ショートカット用の1x1 Conv の重みとバイアス
             gamma_1x1, beta_1x1: ショートカット用のBatchNorm層のパラメータ
         """
         # Pre-activationではReluが先に来る
-        # Allow tests / convenience calls that don't pass gamma/beta by initializing them
         if gamma1 is None or beta1 is None:
             # W1 shape: (out_channels, in_channels, FH, FW)
             in_ch = W1.shape[1]
@@ -399,7 +399,6 @@ class ResidualBlock:
             self.bn_1x1 = BatchNormalization(gamma_1x1, beta_1x1)
             self.conv_1x1 = Convolution(W_1x1, b_1x1, stride=stride, pad=0)
         
-        # Stochastic depth: per-sample survival probability for the residual branch
         self.survival_prob = float(survival_prob)
         self.mask = None
         self.x = None
@@ -426,14 +425,11 @@ class ResidualBlock:
         h = self.bn2.forward(h, is_training)
         h = self.relu2.forward(h)
         h = self.conv2.forward(h)
-        # Apply stochastic depth (training only): randomly drop the residual branch per-sample
+
         if is_training and self.survival_prob < 1.0:
             N = x.shape[0]
-            # mask shape (N,1,1,1) so it broadcast over C,H,W
             self.mask = xp.random.rand(N, 1, 1, 1) < self.survival_prob
-            # convert bool mask to same dtype as h when multiplying in backward
             h = h * self.mask
-            # scale to preserve expectation
             if self.survival_prob > 0:
                 h = h / self.survival_prob
         else:
@@ -466,9 +462,7 @@ class ResidualBlock:
         dshortcut = dout
         
         # メイン路の逆伝播
-        # If stochastic depth dropped some samples in forward, mask gradients accordingly
         if self.mask is not None:
-            # ensure dtype matches gradient tensor
             m = self.mask.astype(dh.dtype)
             if self.survival_prob > 0:
                 dh = dh * m / self.survival_prob

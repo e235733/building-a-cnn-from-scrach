@@ -62,10 +62,10 @@ class Dropout(LayerSpec):
         self.dropout_ratio = dropout_ratio
 
 
-class ResidualBlock(LayerSpec):
+class ResBlock(LayerSpec):
     def __init__(self, out_channels, filter_size=3, stride=1, pad=1,
                  use_1x1_conv=None, survival_prob=1.0):
-        self._type = 'ResidualBlock'
+        self._type = 'ResBlock'
         self.out_channels = out_channels
         self.filter_size = filter_size
         self.stride = stride

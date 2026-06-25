@@ -25,14 +25,14 @@ def main():
 
     # --- モデルの構築 ---
     print("Initializing CNN...")
-    model = NN_Model(layer_config=[ResidualBlock(16, 3),
-                                   ResidualBlock(16, 3),
+    model = NN_Model(layer_config=[ResBlock(16, 3),
+                                   ResBlock(16, 3),
                                    Pool(),
-                                   ResidualBlock(32, 3),
-                                   ResidualBlock(32, 3),
+                                   ResBlock(32, 3),
+                                   ResBlock(32, 3),
                                    Pool(),
-                                   ResidualBlock(64, 3),
-                                   ResidualBlock(64, 3),
+                                   ResBlock(64, 3),
+                                   ResBlock(64, 3),
                                    BatchNorm(), Relu(),
                                    Conv(64, 3, 1, 0),
                                    BatchNorm(), Relu(),
