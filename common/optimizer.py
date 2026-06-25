@@ -36,18 +36,21 @@ class Momentum:
                 params[key] += self.v[key]
 
 class RMSProp:
-    def __init__(self, lr=0.01, alpha=0.9):
+    def __init__(self, lr=0.01, alpha=0.9, weight_decay=0):
         self.lr = lr
         self.alpha = alpha
+        self.weight_decay = weight_decay
         self.h = None
-        
+
     def update(self, params, grads):
         if self.h is None:
             self.h = {}
-            for key, val in params.items():                                
+            for key, val in params.items():
                 self.h[key] = xp.zeros_like(val)
-                
+
         for key in params.keys():
             if key in grads:
-                self.h[key] = self.alpha * self.h[key] - (1.0 - self.lr) * grads[key] ** 2
+                if self.weight_decay > 0 and 'W' in key:
+                    grads[key] += self.weight_decay * params[key]
+                self.h[key] = self.alpha * self.h[key] + (1.0 - self.alpha) * grads[key] ** 2
                 params[key] -= self.lr * grads[key] / (xp.sqrt(self.h[key]) + 1e-7)
