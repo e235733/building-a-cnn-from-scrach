@@ -21,7 +21,7 @@ class Trainer:
         self.evaluate_sample_num_per_epoch = evaluate_sample_num_per_epoch
 
         # optimizer
-        optimizer_class_dict = {'sgd':SGD, 'momentum':Momentum, 'rmsprop':RMSProp}
+        optimizer_class_dict = {'sgd':SGD, 'momentum':Momentum, 'rmsprop':RMSProp, 'adam':Adam}
         self.optimizer = optimizer_class_dict[optimizer.lower()](**optimizer_param)
         
         self.train_size = x_train.shape[0]
