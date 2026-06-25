@@ -7,9 +7,11 @@ class Trainer:
     def __init__(self, model, x_train, t_train, x_test, t_test,
                  epochs=20, mini_batch_size=100,
                  optimizer='SGD', optimizer_param={'lr':0.01}, 
-                 evaluate_sample_num_per_epoch=None, verbose=True):
+                 evaluate_sample_num_per_epoch=None, verbose=True,
+                 log_interval=10):
         self.model = model
         self.verbose = verbose
+        self.log_interval = log_interval
         self.x_train = x_train
         self.t_train = t_train
         self.x_test = x_test
@@ -80,6 +82,12 @@ class Trainer:
         self.train_loss_list.append(loss)
         
         self.current_iter += 1
+
+        if self.verbose and self.log_interval > 0 and self.current_iter % self.log_interval == 0:
+            current_epoch = min((self.current_iter - 1) // self.iter_per_epoch + 1, self.epochs)
+            iter_in_epoch = self.current_iter - (current_epoch - 1) * self.iter_per_epoch
+            print(f"[iter {self.current_iter}/{self.max_iter}] epoch {current_epoch}/{self.epochs}, "
+                  f"batch {iter_in_epoch}/{self.iter_per_epoch}, loss: {loss:.4f}")
 
         # 各エポックの終了時に評価
         if self.current_iter % self.iter_per_epoch == 0 or self.current_iter == self.max_iter:
