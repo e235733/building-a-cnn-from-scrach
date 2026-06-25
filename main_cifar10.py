@@ -1,17 +1,17 @@
 from cifar10_dataset import Cifar10Dataset
 from nn import NN_Model
-from common.layer_spec import ResidualBlock, Pool, BatchNorm, Relu, Conv, Affine
+from common.layer_spec import *
 from common.trainer import Trainer
 from plotter import Plotter
 from common import config
 
 def main():
     # --- ハイパーパラメータの設定 ---
-    n_samples = None
-    epochs = 20
-    mini_batch_size = 128
+    n_samples = 50
+    epochs = 5
+    mini_batch_size = 32
     optimizer = 'Momentum' 
-    optimizer_param = {'lr': 0.05, 'weight_decay': 1e-5}
+    optimizer_param = {'lr': 0.1, 'weight_decay': 1e-4}
     evaluate_sample_num_per_epoch = 10000
     
     # --- データの準備 ---
@@ -26,25 +26,17 @@ def main():
     # --- モデルの構築 ---
     print("Initializing CNN for CIFAR-10...")
     model = NN_Model(input_dim=(3, 32, 32),
-                     layer_config=[
-                         ResidualBlock(32, 3, stride=1, pad=1),
-                         ResidualBlock(32, 3, stride=1, pad=1),
-                         Pool(2, 2, stride=2),
-                         ResidualBlock(64, 3, stride=1, pad=1),
-                         ResidualBlock(64, 3, stride=1, pad=1),
-                         Pool(2, 2, stride=2),
-                         ResidualBlock(128, 3, stride=1, pad=1),
-                         ResidualBlock(128, 3, stride=1, pad=1),
-                         BatchNorm(),
-                         Relu(),
-                         Conv(128, 3, stride=1, pad=0),
-                         BatchNorm(),
-                         Relu(),
-                         Conv(128, 3, stride=1, pad=0),
-                         BatchNorm(),
-                         Relu(),
-                         Affine(10),
-                     ])
+                     layer_config=[ResBlock(16, 3),
+                                   Pool(),
+                                   ResBlock(32, 3),
+                                   Pool(),
+                                   ResBlock(64, 3),
+                                   Pool(),
+                                   BatchNorm(), Relu(),
+                                   Conv(128, 3, pad=0),
+                                   BatchNorm(), Relu(),
+                                   GAP(),
+                                   Affine(10)])
 
     # --- トレーナーの準備 ---
     trainer = Trainer(

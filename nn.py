@@ -132,14 +132,14 @@ class NN_Model:
                     layer_ord = str(layer_count['Dropout'])
                     self.layers['Dropout'+layer_ord] = Dropout(dropout_ratio)
 
-                case 'ResidualBlock':
+                case 'ResBlock':
                     out_channels = params['out_channels']
                     filter_size = params['filter_size']
                     stride = params['stride']
                     pad = params['pad']
-                    use_1x1_conv_flag = params.get('use_1x1_conv', None)
-                    survival_prob = params.get('survival_prob', 1.0)
-                    
+                    use_1x1_conv_flag = params['use_1x1_conv']
+                    survival_prob = params['survival_prob']
+
                     in_channels = latest_dim[0]
                     if use_1x1_conv_flag is None:
                         use_1x1_conv_flag = (stride != 1 or out_channels != in_channels)
@@ -222,19 +222,19 @@ class NN_Model:
                             self.params[gamma1_key], self.params[beta1_key],
                             self.params[gamma2_key], self.params[beta2_key],
                             stride=stride, pad=pad,
-                            use_1x1_conv=False,
-                            survival_prob=survival_prob
+                            survival_prob=survival_prob,
+                            use_1x1_conv=False
                         )
 
-                    if 'ResidualBlock' not in layer_count:
-                        layer_count['ResidualBlock'] = 1
+                    if 'ResBlock' not in layer_count:
+                        layer_count['ResBlock'] = 1
                     else:
-                        layer_count['ResidualBlock'] += 1
-                    layer_ord = str(layer_count['ResidualBlock'])
-                    res_block_name = 'ResidualBlock'+layer_ord
+                        layer_count['ResBlock'] += 1
+                    layer_ord = str(layer_count['ResBlock'])
+                    res_block_name = 'ResBlock'+layer_ord
                     self.layers[res_block_name] = res_block
                     
-                    # ResidualBlock のパラメータキーを記録
+                    # ResBlock のパラメータキーを記録
                     res_param_keys = [W1_key, b1_key, W2_key, b2_key, gamma1_key, beta1_key, gamma2_key, beta2_key]
                     if use_1x1_conv_flag:
                         res_param_keys.extend([W_1x1_key, b_1x1_key, gamma_1x1_key, beta_1x1_key])
@@ -350,7 +350,7 @@ class NN_Model:
         
         for layer_name, layer in self.layers.items():
             # ResidualBlock層の勾配
-            if layer_name.startswith('ResidualBlock') and hasattr(layer, 'get_grads'):
+            if layer_name.startswith('ResBlock') and hasattr(layer, 'get_grads'):
                 res_grads = layer.get_grads()
                 param_keys = self.layer_params[layer_name]
                 
