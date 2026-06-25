@@ -6,12 +6,12 @@ from common import config
 
 def main():
     # --- ハイパーパラメータの設定 ---
-    n_samples = 5000 
+    n_samples = None
     epochs = 20
     mini_batch_size = 128
     optimizer = 'Momentum' 
-    optimizer_param = {'lr': 0.01}
-    evaluate_sample_num_per_epoch = 1000
+    optimizer_param = {'lr': 0.05, 'weight_decay': 1e-5}
+    evaluate_sample_num_per_epoch = 10000
     
     # --- データの準備 ---
     dataset = Cifar10Dataset(n_samples=n_samples)
@@ -25,18 +25,20 @@ def main():
     # --- モデルの構築 ---
     print("Initializing CNN for CIFAR-10...")
     model = NN_Model(input_dim=(3, 32, 32),
-                     layer_config=[
-                                   ['Conv', 32, 3, 1, 1], ['LeakyRelu'],
-                                   ['Conv', 32, 3, 1, 1], ['LeakyRelu'],
+                     layer_config=[['ResidualBlock', 32, 3, 1, 1],
+                                   ['ResidualBlock', 32, 3, 1, 1],
                                    ['Pool', 2, 2, 2],
-                                   ['Conv', 64, 3, 1, 1], ['LeakyRelu'],
-                                   ['Conv', 64, 3, 1, 1], ['LeakyRelu'],
+                                   ['ResidualBlock', 64, 3, 1, 1],
+                                   ['ResidualBlock', 64, 3, 1, 1],
                                    ['Pool', 2, 2, 2],
-                                   ['Conv', 128, 3, 1, 1], ['LeakyRelu'],
-                                   ['Dropout'],
-                                   ['Affine', 128], ['LeakyRelu'],
-                                   ['Affine', 10]],
-                                   use_batchnorm=True)
+                                   ['ResidualBlock', 128, 3, 1, 1],
+                                   ['ResidualBlock', 128, 3, 1, 1],
+                                   ['BatchNorm'], ['Relu'],
+                                   ['Conv', 128, 3, 0, 1],
+                                   ['BatchNorm'], ['Relu'],
+                                   ['Conv', 128, 3, 0, 1],
+                                   ['BatchNorm'], ['Relu'],
+                                   ['Affine', 10]])
 
     # --- トレーナーの準備 ---
     trainer = Trainer(
