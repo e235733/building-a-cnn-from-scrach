@@ -6,12 +6,12 @@ from plotter import Plotter
 
 def main():
     # --- ハイパーパラメータの設定 ---
-    n_samples = 200  # Noneの場合は全データを使用
+    n_samples = 10000
     epochs = 10
     mini_batch_size = 128
     optimizer = 'Momentum'
     optimizer_param = {'lr': 0.1, 'weight_decay': 1e-5}
-    evaluate_sample_num_per_epoch = 10000
+    evaluate_sample_num_per_epoch = 1000
     
     # --- データの準備 ---
     dataset = MnistDataset(n_samples=n_samples)
@@ -24,19 +24,13 @@ def main():
 
     # --- モデルの構築 ---
     print("Initializing CNN...")
-    model = NN_Model(layer_config=[['ResidualBlock', 16, 3, 1, 1],
-                                   ['ResidualBlock', 16, 3, 1, 1],
+    model = NN_Model(layer_config=[['Conv', 32, 3, 1, 1],
+                                   ['Relu'],
+                                   ['Pool', 2, 2, 2], 
+                                   ['Conv', 64, 3, 1, 1],
+                                   ['Relu'],
                                    ['Pool', 2, 2, 2],
-                                   ['ResidualBlock', 32, 3, 1, 1],
-                                   ['ResidualBlock', 32, 3, 1, 1],
-                                   ['Pool', 2, 2, 2],
-                                   ['ResidualBlock', 64, 3, 1, 1],
-                                   ['ResidualBlock', 64, 3, 1, 1],
-                                   ['BatchNorm'], ['Relu'],
-                                   ['Conv', 64, 3, 0, 1],
-                                   ['BatchNorm'], ['Relu'],
-                                   ['Conv', 64, 3, 0, 1],
-                                   ['BatchNorm'], ['Relu'],
+                                   ['Conv', 128, 3, 0, 1],
                                    ['GAP'],
                                    ['Affine', 10]])
 
@@ -69,8 +63,12 @@ def main():
     plotter.show_evaluation(model, x_test[:1000], t_test[:1000], save_path="evaluation.png")
     
     print("Visualizing CNN Filters...")
-    plotter.visualize_filters(model, save_path="filters.png")
-    
+    plotter.visualize_composed_filters(model, x_test[:32], top_k=16, save_path="composed_filters.png")
+
+    print("Visualizing Class Reconstructions...")
+    class_names = [str(i) for i in range(10)]
+    plotter.visualize_class_reconstructions(model, class_names=class_names, save_path="class_reconstructions.png")
+
     plotter.finish(save_path="final_plot.png")
 
 if __name__ == '__main__':

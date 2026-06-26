@@ -214,6 +214,182 @@ class Plotter:
         elif matplotlib.get_backend() != 'agg':
             plt.show()
 
+    @staticmethod
+    def _compose_conv(composed, W):
+        """前段までの合成済みフィルタ(composed)に、現在の層の重みWを合成する。
+        composed: (C_in, n_img_ch, H, W) または None（最初のConv層の場合）
+        W: (C_out, C_in, FH, FW)
+        戻り値: (C_out, n_img_ch, H+FH-1, W+FW-1)
+        """
+        W = W.astype(np.float64)
+        if composed is None:
+            # 最初のConv層は重みそのものが元画像チャンネルに対するフィルタ
+            return W.copy()
+
+        C_out, C_in, FH, FW = W.shape
+        _, n_img_ch, H, Wd = composed.shape
+        out_h, out_w = H + FH - 1, Wd + FW - 1
+
+        # FFTで一括計算（カーネル合成 = 畳み込みなのでFFT上では複素数の積になる）
+        Cf = np.fft.rfft2(composed, s=(out_h, out_w), axes=(-2, -1))   # (C_in, n_img_ch, fh, fw)
+        Wf = np.fft.rfft2(W, s=(out_h, out_w), axes=(-2, -1))          # (C_out, C_in, fh, fw)
+        result_f = np.einsum('jkhw,kchw->jchw', Wf, Cf)
+        return np.fft.irfft2(result_f, s=(out_h, out_w), axes=(-2, -1))
+
+    @staticmethod
+    def _pad_to_match(kernel, target_h, target_w):
+        """カーネルを中心揃えで目的のサイズまでゼロパディングする（skip connectionの合成用）"""
+        _, _, h, w = kernel.shape
+        pad_h, pad_w = target_h - h, target_w - w
+        top, bottom = pad_h // 2, pad_h - pad_h // 2
+        left, right = pad_w // 2, pad_w - pad_w // 2
+        return np.pad(kernel, ((0, 0), (0, 0), (top, bottom), (left, right)))
+
+    @classmethod
+    def _compose_network_kernels(cls, model):
+        """モデル内の畳み込み系レイヤーを順に遡って合成し、最終的なConv/ResidualBlock出力の
+        各チャンネルが元の入力画像の何を見ているかを表すカーネルを返す。
+        戻り値: (composed, target_out)
+            composed: (C, n_img_ch, H, W) または None
+            target_out: 最後に合成したConv/ResidualBlock層の実際の出力(活性化ランキング用)
+        """
+        from common.layers import Convolution, ResidualBlock
+
+        composed = None
+        target_out = None
+
+        for layer in model.layers.values():
+            if isinstance(layer, Convolution):
+                composed = cls._compose_conv(composed, to_cpu(layer.W))
+                target_out = layer.out
+            elif isinstance(layer, ResidualBlock):
+                main = cls._compose_conv(composed, to_cpu(layer.conv1.W))
+                main = cls._compose_conv(main, to_cpu(layer.conv2.W))
+                skip = cls._compose_conv(composed, to_cpu(layer.conv_1x1.W)) if layer.use_1x1_conv else composed
+
+                target_h = max(main.shape[2], skip.shape[2])
+                target_w = max(main.shape[3], skip.shape[3])
+                main = cls._pad_to_match(main, target_h, target_w)
+                skip = cls._pad_to_match(skip, target_h, target_w)
+                composed = main + skip
+                target_out = layer.out
+            # Pool / Relu / BatchNorm / GAP / Dropout / Affine は合成フィルタに影響しないので素通り
+
+        return composed, target_out
+
+    def visualize_composed_filters(self, model, X_sample, top_k=16, save_path=None):
+        """各畳み込み層を遡って合成した、最終層の「実効フィルタ」をRGB画像として可視化する。
+
+        ReLU/BatchNorm/Poolingなどの非線形・空間処理は合成フィルタに影響しないものとして
+        スキップする近似（Effective Receptive Fieldと同じ近似）。
+        ResidualBlockのskip connectionはメインパスと加算して合成する。
+        チャンネルは実際のサンプル画像に対する活性化の平均絶対値が大きいものを上位top_k件選ぶ。
+        """
+        model.is_training = False
+        model.predict(xp.asarray(X_sample))
+
+        composed, target_out = self._compose_network_kernels(model)
+
+        if composed is None or target_out is None:
+            print("合成可能な畳み込み層が見つかりませんでした。")
+            return
+
+        activ = to_cpu(target_out)
+        channel_score = np.mean(np.abs(activ), axis=(0, 2, 3))
+        k = min(top_k, composed.shape[0])
+        top_idx = np.argsort(channel_score)[::-1][:k]
+
+        ny = int(np.ceil(np.sqrt(k)))
+        nx = int(np.ceil(k / ny))
+        fig, axs = plt.subplots(ny, nx, figsize=(nx * 2, ny * 2), num="Composed Effective Filters")
+        axs = np.array(axs).reshape(-1)
+
+        n_img_ch = composed.shape[1]
+        for ax, idx in zip(axs, top_idx):
+            w = composed[idx].transpose(1, 2, 0)  # (C,H,W) -> (H,W,C)
+            w_min, w_max = w.min(), w.max()
+            w = (w - w_min) / (w_max - w_min + 1e-8)
+            if n_img_ch == 1:
+                ax.imshow(w[:, :, 0], cmap='gray')
+            else:
+                ax.imshow(w)
+            ax.set_title(f"ch{idx} ({channel_score[idx]:.3f})", fontsize=8)
+            ax.axis('off')
+        for ax in axs[k:]:
+            ax.axis('off')
+
+        fig.suptitle(f"Composed Effective Filters - Final Layer (Top-{k} by Activation)")
+        plt.tight_layout()
+
+        if save_path:
+            plt.savefig(save_path)
+            print(f"Plot saved to {save_path}")
+        elif matplotlib.get_backend() != 'agg':
+            plt.show()
+
+    def visualize_class_reconstructions(self, model, class_names=None, save_path=None):
+        """最終分類層(Affine)の重みを使い、各ラベルの判断根拠となる画像パターンを
+        フィルタ合成によって逆算復元する。
+
+        各畳み込み層を遡って得た「チャンネルごとの実効フィルタ」(_compose_network_kernels)を、
+        最終Affine層がそのチャンネルに与えている重みで線形合成することで、
+        「このラベルだと判定するために、どのチャンネルをどれだけ重視しているか」を
+        1枚のRGB(またはグレースケール)画像として表現する。
+
+        GAP -> Affine という構成のモデルにのみ対応(Flatten -> Affineは未対応)。
+        """
+        from common.layers import GlobalAveragePooling, Affine
+
+        composed, _ = self._compose_network_kernels(model)
+        if composed is None:
+            print("合成可能な畳み込み層が見つかりませんでした。")
+            return
+
+        has_gap = any(isinstance(layer, GlobalAveragePooling) for layer in model.layers.values())
+        affine_layer = next((layer for layer in model.layers.values() if isinstance(layer, Affine)), None)
+
+        if not has_gap or affine_layer is None:
+            print("visualize_class_reconstructionsはGAP->Affine構成のモデルのみ対応しています。")
+            return
+
+        W_affine = to_cpu(affine_layer.W)  # (C_final, num_classes)
+        C_final, num_classes = W_affine.shape
+        if composed.shape[0] != C_final:
+            print(f"チャンネル数が一致しません(合成側:{composed.shape[0]}, Affine側:{C_final})。")
+            return
+
+        # クラスごとに、最終層の重みでチャンネル方向に合成したフィルタを作る
+        class_images = np.einsum('kc,kihw->cihw', W_affine, composed)  # (num_classes, n_img_ch, H, W)
+        n_img_ch = class_images.shape[1]
+
+        ny = int(np.ceil(np.sqrt(num_classes)))
+        nx = int(np.ceil(num_classes / ny))
+        fig, axs = plt.subplots(ny, nx, figsize=(nx * 2, ny * 2), num="Class Reconstructions")
+        axs = np.array(axs).reshape(-1)
+
+        for ax, c in zip(axs, range(num_classes)):
+            img = class_images[c].transpose(1, 2, 0)  # (n_img_ch,H,W) -> (H,W,n_img_ch)
+            img_min, img_max = img.min(), img.max()
+            img = (img - img_min) / (img_max - img_min + 1e-8)
+            if n_img_ch == 1:
+                ax.imshow(img[:, :, 0], cmap='gray')
+            else:
+                ax.imshow(img)
+            label = class_names[c] if class_names is not None else f"class {c}"
+            ax.set_title(label, fontsize=9)
+            ax.axis('off')
+        for ax in axs[num_classes:]:
+            ax.axis('off')
+
+        fig.suptitle("Reconstructed Image per Predicted Label")
+        plt.tight_layout()
+
+        if save_path:
+            plt.savefig(save_path)
+            print(f"Plot saved to {save_path}")
+        elif matplotlib.get_backend() != 'agg':
+            plt.show()
+
     def show_evaluation(self, model, X_test, Y_test, save_path=None):
         from sklearn.metrics import confusion_matrix
         import seaborn as sns

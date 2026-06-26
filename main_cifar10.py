@@ -70,8 +70,12 @@ def main():
     
     # フィルターの可視化
     print("Visualizing CNN Filters...")
-    plotter.visualize_filters(model, save_path="cifar10_filters.png")
-    
+    plotter.visualize_composed_filters(model, x_test[:32], top_k=16, save_path="cifar10_composed_filters.png")
+
+    # クラスごとの復元画像（GAP -> Affine構成が前提。現在のlayer_configはGAP未使用のため未対応）
+    print("Visualizing Class Reconstructions...")
+    plotter.visualize_class_reconstructions(model, class_names=dataset.label_names, save_path="cifar10_class_reconstructions.png")
+
     plotter.finish(save_path="cifar10_final_plot.png")
 
 if __name__ == '__main__':
